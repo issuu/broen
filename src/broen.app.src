@@ -1,0 +1,25 @@
+{application, broen,
+  [
+    {description, "The thin layer provides a bridge between HTTP and AMQP"},
+    {vsn, "1.0.0"},
+    {registered, []},
+    {applications, [
+      kernel,
+      stdlib,
+      crypto,
+      iso8601,
+      inets,
+      mnesia,
+      yaws,
+      folsom,
+      amqp_director,
+      jsx
+    ]},
+    {mod, {broen_app, []}},
+    {env, [
+      {yaws_flags, 200},
+      {partial_post_size, 40960},
+      {auth_mod, broen_auth_dummy},
+      {serializer_mod, broen_serializer_json}
+    ]}
+  ]}.

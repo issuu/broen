@@ -1,0 +1,17 @@
+# Build products
+/_build
+*.beam
+/logs
+/log
+.rebar3
+rebar3.crashdump
+
+# IDE related
+.idea
+*.iml
+.vscode
+
+# Other
+.DS_Store
+erl_crash.dump
+dump.rdb
