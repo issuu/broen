@@ -1,3 +1,4 @@
+%%% @hidden
 -module(broen_server_crash_handler).
 
 -export([crashmsg/3]).
@@ -10,7 +11,7 @@ crashmsg(_Arg, _ServerConf, Str) ->
   PrettyString = iolist_to_binary(re:replace(Str, "\n\s*", "", [global])),
   ok = lager:error("Crash: ~p", [[{token, Token}, {msg, PrettyString}]]),
   {ehtml,
-   [{h2, [], "Internal error, thin-layer code crashed"},
+   [{h2, [], "Internal error, broen code crashed"},
     {br},
     {hr},
     {pre, [], Token},

@@ -1,3 +1,9 @@
+%%% ---------------------------------------------------------------------------------
+%%% @private
+%%% @doc
+%%% The main application module
+%%% @end
+%%% ---------------------------------------------------------------------------------
 -module(broen_app).
 
 -include_lib("yaws/include/yaws.hrl").
@@ -7,10 +13,9 @@
 %% Application callbacks
 -export([start/2, stop/1, prep_stop/1]).
 
-%% ===================================================================
-%% Application callbacks
-%% ===================================================================
 
+%% Application callbacks
+%% ---------------------------------------------------------------------------------
 start(_StartType, _StartArgs) ->
   broen_core:register_metrics(),
   {ok, Pid} = broen_sup:start_link(),
@@ -24,8 +29,8 @@ prep_stop(State) ->
 stop(_State) ->
   ok.
 
-%%% Internal Functions
-
+%% Internal functions
+%% ---------------------------------------------------------------------------------
 stop_yaws() ->
   {ok, GC, _Groups} = yaws_api:getconf(),
   ok = yaws_api:setconf(GC, []),
@@ -69,8 +74,6 @@ start_yaws() ->
                    [[?sc_set_deflate(ServerConfig, true)],
                     [?sc_set_deflate(InternalServerConfig, true)]]),
   ok.
-
-% compressible_media_types() -> [].
 
 compressible_media_types() ->
   [{"application", "javascript"},

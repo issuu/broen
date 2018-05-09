@@ -1,4 +1,5 @@
 REBAR=rebar3
+CONFIG_FILE ?= test/sys-test.config
 
 
 ### Local building
@@ -20,7 +21,6 @@ test-eunit:
 	$(REBAR) eunit
 
 test-ct:
-	$(REBAR) ct --sys_config=test/sys-test.config
-
+	$(REBAR) ct --sys_config=$(CONFIG_FILE)
 dialyzer:
 	$(REBAR) dialyzer

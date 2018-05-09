@@ -1,6 +1,6 @@
 {application, broen,
   [
-    {description, "The thin layer provides a bridge between HTTP and AMQP"},
+    {description, "broen provides a bridge between HTTP and AMQP"},
     {vsn, "1.0.0"},
     {registered, []},
     {applications, [

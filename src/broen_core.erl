@@ -1,7 +1,11 @@
+%%% ---------------------------------------------------------------------------------
+%%% @doc
 %%% broen_core turns HTTP requests/responses into AMQP RPC messaging.
-%%% Given a HTTP Request, this module will publish a specific Msgpack'ed message on an internal queue
-%%% Upon receiving a response, the module will repond back over HTTP. As such, the module provides
-%%% a "thin layer" for HTTP over AMQP—in the style of Mongrel 2.
+%%% Given a HTTP Request, this module will first authenticate it using the provided
+%%% authentication plugin and the publish the message serialized with the serializer
+%%% plug over AMQP. Upon receiving a response, the module will respond back over HTTP.
+%%% @end
+%%% ---------------------------------------------------------------------------------
 -module(broen_core).
 
 -include_lib("yaws/include/yaws_api.hrl").
@@ -14,43 +18,75 @@
 -define(ACAO_HEADER, <<"access-control-allow-origin">>).
 
 -type content_type() :: unicode:unicode_binary().
+%% The MIME content type
 -type broen_string() :: unicode:unicode_binary().
+%% A binary string
 -type broen_nullable_string() :: unicode:unicode_binary() | null.
+%% A binary string that can be null
 -type broen_object() :: #{broen_string() => broen_string()}.
+%% An generic sub-object that is a map mapping a string to a string. Used for e.g. HTTP headers
 
 -type cookie_name() :: broen_string().
+%% The name of a cookie
 -type cookie_value() :: #{
-              value := broen_string(),
-              domain => broen_string(),
-              expires => broen_string()}.
+value := broen_string(),
+domain => broen_string(),
+expires => broen_string()}.
+%% The cookie properties. Each cookie must define a value and may optionally define the domain it applies to and the expiration date
 -type broen_cookies() :: #{cookie_name() => cookie_value()}.
+%% The cookies object maps cookie names to the properties.
 
 -type broen_request() :: #{
-              cookies := broen_object(),
-              http_headers := broen_object(),
-              request := broen_string(),
-              method := broen_string(),
-              client_data := broen_nullable_string(),
-              fullpath := broen_string(),
-              appmoddata := broen_string(),
-              referer := broen_nullable_string(),
-              useragent := broen_string(),
-              client_ip := broen_string(),
-              routing_key := broen_string(),
-              queryobj := broen_object(),
-              auth_data := term(),
-              querydata => broen_string(),
-              postobj => broen_object(),
-              multipartobj => term()}.
+  cookies := broen_object(),
+  http_headers := broen_object(),
+  request := broen_string(),
+  method := broen_string(),
+  client_data := broen_nullable_string(),
+  fullpath := broen_string(),
+  appmoddata := broen_string(),
+  referer := broen_nullable_string(),
+  useragent := broen_string(),
+  client_ip := broen_string(),
+  routing_key := broen_string(),
+  queryobj := broen_object(),
+  auth_data := term(),
+  querydata => broen_string(),
+  postobj => broen_object(),
+  multipartobj => term()}.
+%% The format of a broen request that is sent to the serializer plugin. <br/>
+%% <b>cookies</b> - Cookies attached to the HTTP request <br/>
+%% <b>http_headers</b> - HTTP request headers <br/>
+%% <b>request</b> - The HTTP method <br/>
+%% <b>method</b> - Same as above <br/>
+%% <b>client_data</b> - Client information <br/>
+%% <b>fullpath</b> - Full path of the request as provided by Yaws <br/>
+%% <b>appmoddata</b> - The URL that is turned into the routing key (i.e. what follows /call) <br/>
+%% <b>referer</b> - The referer URL <br/>
+%% <b>useragent</b> - User agent data <br/>
+%% <b>client_ip</b> - IP of the client <br/>
+%% <b>routing_key</b> - The routing key the request will be sent to <br/>
+%% <b>queryobj</b> - The query object containing the query parameters <br/>
+%% <b>auth_data</b> - Data returned by the authentication module <br/>
+%% <b>querydata</b> - Same as queryobj, but in a string format <br/>
+%% <b>postobj</b>- Data attached to a POST request <br/>
+%% <b>multipartobj</b> - Data for the multipart request <br/>
 
 -type broen_response() :: #{
-              status_code := integer(),
               payload := term(),
+              status_code => integer(),
               media_type => content_type(),
               cookies => broen_cookies(),
               cookie_path => broen_string(),
               headers => broen_object()}
   | #{redirect := unicode:unicode_binary()}.
+%% The format of a broen response that should be returned by the serializer plugin<br/>
+%% <b>payload</b> - The payload of the response<br/>
+%% <b>status_code</b> - Status code of the response<br/>
+%% <b>media_type</b> - The MIME content type of the payload<br/>
+%% <b>cookies</b> - Additional cookies to be sent to user<br/>
+%% <b>cookie_path</b> -  The cookie path<br/>
+%% <b>headers</b> - Additional headers for the HTTP response<br/>
+%% Alternatively the response can also be a redirect.
 
 -export_type([content_type/0, broen_request/0, broen_response/0]).
 
@@ -116,7 +152,7 @@ handle(Arg, Exch, CookiePath, Options) ->
                 {_, MetricTimeout, _} = subsystem_metric(RoutingKey),
                 folsom_metrics:notify({MetricTimeout, 1}),
                 [{status, 504},
-                 {content, "text/plain", "API Thin Layer timeout"}];
+                 {content, "text/plain", "API Broen timeout"}];
               {error, {reply_code, 312}} ->
                 folsom_metrics:notify({'broen_core.failure.404', 1}),
                 [{status, 404},

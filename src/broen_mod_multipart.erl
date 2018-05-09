@@ -1,3 +1,4 @@
+%%% @hidden
 -module(broen_mod_multipart).
 
 -include_lib("yaws/include/yaws_api.hrl").
@@ -28,7 +29,7 @@ post_multipart(Arg, State) ->
     {cont, Cont, Res} ->
       case accumulate(Arg, Res, State) of
         {done, Result} ->
-          call_thinlayer(Arg, Result);
+          call_broen(Arg, Result);
         {cont, #multipart_state{total_size = S}} when S > ?MULTIPART_BODY_LIMIT ->
           lager:debug("Size of multipart exceeds limit - size so far: ~p (bytes)", [S]),
           folsom_metrics:notify({'broen_mod_multipart.failure.400', 1}),
@@ -40,7 +41,7 @@ post_multipart(Arg, State) ->
       % handle result
       case accumulate(Arg, Res, State#multipart_state{last_chunk = true}) of
         {done, Result} ->
-          call_thinlayer(Arg, Result);
+          call_broen(Arg, Result);
         {cont, _} ->
           err()
       end;
@@ -49,7 +50,7 @@ post_multipart(Arg, State) ->
       err()
   end.
 
-call_thinlayer(Arg, Result) ->
+call_broen(Arg, Result) ->
   % send through thin layer
   broen_core:handle(Arg#arg{state = {multipart, Result}, clidata = undefined}, <<"http_exchange">>, broen_mod:default_cookie_path(Arg#arg.server_path),
                     []).

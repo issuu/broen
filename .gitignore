@@ -5,6 +5,7 @@
 /log
 .rebar3
 rebar3.crashdump
+/doc
 
 # IDE related
 .idea

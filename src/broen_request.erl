@@ -1,3 +1,8 @@
+%%% ---------------------------------------------------------------------------------
+%%% @doc
+%%% This module handles building broen requests out of Yaws data.
+%%% @end
+%%% ---------------------------------------------------------------------------------
 -module(broen_request).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -159,14 +164,14 @@ format_http_header_name(Name) when is_list(Name) ->
 %% group/1 condensates similar headers into one header
 %% Groups multiple keys into one key only, with values of repeated keys concatenated by ';'
 %% e.g.,
-%% [{<<"accept-charset">>,"ISO-8859-1,utf-8;q=0.7,*;q=0.3"},
+%% ```[{<<"accept-charset">>,"ISO-8859-1,utf-8;q=0.7,*;q=0.3"},
 %%  {<<"accept-language">>,"en-US,en;q=0.8"},
 %%  {<<"accept-language">>,"en-UK"},
-%%  {<<"cache-control">>,"max-age=0"}].
+%%  {<<"cache-control">>,"max-age=0"}].'''
 %% Will become:
-%% [{<<"accept-charset">>,"ISO-8859-1,utf-8;q=0.7,*;q=0.3"},
+%% ```[{<<"accept-charset">>,"ISO-8859-1,utf-8;q=0.7,*;q=0.3"},
 %%  {<<"accept-language">>,"en-US,en;q=0.8;en-UK"},
-%%  {<<"cache-control">>,"max-age=0"}].
+%%  {<<"cache-control">>,"max-age=0"}].'''
 %% @end
 group(KeyValues) ->
   group(lists:keysort(1, KeyValues), []).

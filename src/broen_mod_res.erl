@@ -1,3 +1,4 @@
+%%% @hidden
 -module(broen_mod_res).
 
 -include_lib("yaws/include/yaws_api.hrl").

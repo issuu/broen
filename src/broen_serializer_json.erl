@@ -1,3 +1,9 @@
+%%% ---------------------------------------------------------------------------------
+%%% @doc
+%%% An example serializer plugin that encodes and deodes broen requests and responses
+%%% to and form the JSON format.
+%%% @end
+%%% ---------------------------------------------------------------------------------
 -module(broen_serializer_json).
 -include_lib("yaws/include/yaws_api.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -6,11 +12,13 @@
 -export([serialize/1,
          deserialize/2]).
 
+%% @doc Serialize the broen request into JSON
 -spec serialize(broen_core:broen_request()) -> {term(), broen_core:content_type()}.
 serialize(Request) ->
   MappedReq = maps:map(fun(multipartobj, Val) -> handle_multipart(Val); (_, Val) -> Val end, Request),
   {jsx:encode(MappedReq), <<"application/json">>}.
 
+%% @doc Deserialize the JSON response into a broen response
 -spec deserialize(term(), broen_core:content_type()) -> {ok, broen_core:broen_response()} | {error, invalid_content_type}.
 deserialize(Raw, <<"application/json">>) ->
   Decoded = jsx:decode(Raw, [return_maps]),
@@ -20,6 +28,8 @@ deserialize(Raw, <<"application/json">>) ->
 deserialize(_Raw, _) ->
   {error, invalid_content_type}.
 
+%% Internal functions
+%% ---------------------------------------------------------------------------------
 map_cookies(error) -> #{};
 map_cookies({ok, Cookies}) ->
   maps:map(fun(_CookieName, Values) ->
@@ -31,6 +41,8 @@ handle_multipart({MultipartVal}) when is_list(MultipartVal) ->
            maps:from_list(MultipartVal));
 handle_multipart(Else) -> Else.
 
+%% Tests
+%% ---------------------------------------------------------------------------------
 serializer_test_() ->
   Request = #{appmoddata => <<"broen_testing_multipart">>, auth_data => [],
               client_data => null, client_ip => <<"127.0.0.1">>, cookies => #{},

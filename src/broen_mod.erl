@@ -1,3 +1,4 @@
+%%% @doc false
 -module(broen_mod).
 
 -include_lib("yaws/include/yaws_api.hrl").
