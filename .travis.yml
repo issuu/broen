@@ -9,3 +9,5 @@ script:
 
 services:
   - rabbitmq
+
+sudo: required
