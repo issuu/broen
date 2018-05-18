@@ -1,0 +1,11 @@
+language: erlang
+otp_release:
+ - 19.3
+ - 20.0.3
+
+script:
+  - make test
+  - make dialyzer
+
+services:
+  - rabbitmq
