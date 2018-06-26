@@ -1,6 +1,6 @@
 {"1.1.0",
-[{<<"amqp_client">>,{pkg,<<"amqp_client">>,<<"3.7.5">>},1},
- {<<"amqp_director">>,{pkg,<<"amqp_director">>,<<"1.0.0">>},0},
+[{<<"amqp_client">>,{pkg,<<"amqp_client">>,<<"3.7.6">>},1},
+ {<<"amqp_director">>,{pkg,<<"amqp_director">>,<<"1.1.2">>},0},
  {<<"bear">>,{pkg,<<"bear">>,<<"0.8.5">>},1},
  {<<"folsom">>,{pkg,<<"folsom">>,<<"0.8.5">>},0},
  {<<"goldrush">>,{pkg,<<"goldrush">>,<<"0.1.9">>},1},
@@ -8,7 +8,7 @@
  {<<"iso8601">>,{pkg,<<"iso8601">>,<<"1.2.3">>},0},
  {<<"jsx">>,{pkg,<<"jsx">>,<<"2.9.0">>},0},
  {<<"lager">>,{pkg,<<"lager">>,<<"3.5.2">>},0},
- {<<"rabbit_common">>,{pkg,<<"rabbit_common">>,<<"3.7.5">>},2},
+ {<<"rabbit_common">>,{pkg,<<"rabbit_common">>,<<"3.7.6">>},2},
  {<<"ranch">>,{pkg,<<"ranch">>,<<"1.5.0">>},3},
  {<<"ranch_proxy_protocol">>,{pkg,<<"ranch_proxy_protocol">>,<<"1.5.0">>},3},
  {<<"recon">>,{pkg,<<"recon">>,<<"2.3.4">>},0},
@@ -18,8 +18,8 @@
   0}]}.
 [
 {pkg_hash,[
- {<<"amqp_client">>, <<"EE5FF6209CA4BE0FF950E92775F4E4AAB272C74003ABD84DED9CFF64AF1B597A">>},
- {<<"amqp_director">>, <<"9EEF79605917A3D7AD7D59F49514F30E3B9662B7D57F634DE62EB5F58C61FC01">>},
+ {<<"amqp_client">>, <<"E85A5688EDF75D2F786EA66303F5B0F2B196BC4C5F82495F738CE19570CF8748">>},
+ {<<"amqp_director">>, <<"4FD81DC63D56D94FF1057D8D6A8F59533217E1AD38B3556A8F6DA0AA74180F2D">>},
  {<<"bear">>, <<"E95FCA1627CD9E15BAF93CE0A52AFF16917BAF325F0EE65B88CD715376CD2344">>},
  {<<"folsom">>, <<"94A027B56FE84FEED264F9B33CB4C6AC9A801FAD84B87DBDA0836CE83C3B8D69">>},
  {<<"goldrush">>, <<"F06E5D5F1277DA5C413E84D5A2924174182FB108DABB39D5EC548B27424CD106">>},
@@ -27,7 +27,7 @@
  {<<"iso8601">>, <<"56D173EC568D42E95908797A9B7D27BCF0B377443277416733EB1A544A4A47C2">>},
  {<<"jsx">>, <<"D2F6E5F069C00266CAD52FB15D87C428579EA4D7D73A33669E12679E203329DD">>},
  {<<"lager">>, <<"614A8C8F67BF99B69EB264EA22121AD25511C055AAEC09B086773D5108C6767F">>},
- {<<"rabbit_common">>, <<"3346C2C65DF2528891C3113AA33E78AADBD5E6996E4230B937C2429F86861268">>},
+ {<<"rabbit_common">>, <<"FE6B34DB6A98CEEF40852E55DD782E944A63C7E855794AB58D3C3845091A6DB0">>},
  {<<"ranch">>, <<"F04166F456790FEE2AC1AA05A02745CC75783C2BFB26D39FAF6AEFC9A3D3A58A">>},
  {<<"ranch_proxy_protocol">>, <<"E698AAEB590AD504B649DC0D3055ABEE6CAF0B49D3CAEE1A080AE83B5B499F30">>},
  {<<"recon">>, <<"B406C2FCCDEAA0D94E23B5E30AE3D635A2D461E363A5C9C6316897037CF050D2">>}]}

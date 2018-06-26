@@ -29,33 +29,33 @@
 -type cookie_name() :: broen_string().
 %% The name of a cookie
 -type cookie_value() :: #{
-value := broen_string(),
-domain => broen_string(),
-path => broen_string(),
-http_only => boolean(),
-secure => boolean(),
-expires => broen_string()}.
+    value := broen_string(),
+    domain => broen_string(),
+    path => broen_string(),
+    http_only => boolean(),
+    secure => boolean(),
+    expires => broen_string()}.
 %% The cookie properties. Each cookie must define a value and may optionally define the domain it applies to and the expiration date
 -type broen_cookies() :: #{cookie_name() => cookie_value()}.
 %% The cookies object maps cookie names to the properties.
 
 -type broen_request() :: #{
-cookies := broen_object(),
-http_headers := broen_object(),
-request := broen_string(),
-method := broen_string(),
-client_data := broen_nullable_string(),
-fullpath := broen_string(),
-appmoddata := broen_string(),
-referer := broen_nullable_string(),
-useragent := broen_string(),
-client_ip := broen_string(),
-routing_key := broen_string(),
-queryobj := broen_object(),
-auth_data := term(),
-querydata => broen_string(),
-postobj => broen_object(),
-multipartobj => term()}.
+    cookies := broen_object(),
+    http_headers := broen_object(),
+    request := broen_string(),
+    method := broen_string(),
+    client_data := broen_nullable_string(),
+    fullpath := broen_string(),
+    appmoddata := broen_string(),
+    referer := broen_nullable_string(),
+    useragent := broen_string(),
+    client_ip := broen_string(),
+    routing_key := broen_string(),
+    queryobj := broen_object(),
+    auth_data := term(),
+    querydata => broen_string(),
+    postobj => broen_object(),
+    multipartobj => term()}.
 %% The format of a broen request that is sent to the serializer plugin. <br/>
 %% <b>cookies</b> - Cookies attached to the HTTP request <br/>
 %% <b>http_headers</b> - HTTP request headers <br/>
