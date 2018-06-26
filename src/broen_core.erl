@@ -274,7 +274,7 @@ append_cors(Headers, Origin, allow_origin) ->
 
 format_cookie(N, CookieValue, DefaultExpires, CookiePath) ->
   {V, Expires, Domain, Path} = parse_cookie_value(CookieValue, DefaultExpires, CookiePath),
-  Options1 = [{path, Path}, {expires, Expires}],
+  Options1 = [{path, binary_to_list(Path)}, {expires, Expires}],
   Options2 = case Domain of
                undefined -> Options1;
                D when is_list(D) -> [{domain, D} | Options1]
