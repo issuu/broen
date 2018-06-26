@@ -32,28 +32,30 @@
 value := broen_string(),
 domain => broen_string(),
 path => broen_string(),
+http_only => boolean(),
+secure => boolean(),
 expires => broen_string()}.
 %% The cookie properties. Each cookie must define a value and may optionally define the domain it applies to and the expiration date
 -type broen_cookies() :: #{cookie_name() => cookie_value()}.
 %% The cookies object maps cookie names to the properties.
 
 -type broen_request() :: #{
-  cookies := broen_object(),
-  http_headers := broen_object(),
-  request := broen_string(),
-  method := broen_string(),
-  client_data := broen_nullable_string(),
-  fullpath := broen_string(),
-  appmoddata := broen_string(),
-  referer := broen_nullable_string(),
-  useragent := broen_string(),
-  client_ip := broen_string(),
-  routing_key := broen_string(),
-  queryobj := broen_object(),
-  auth_data := term(),
-  querydata => broen_string(),
-  postobj => broen_object(),
-  multipartobj => term()}.
+cookies := broen_object(),
+http_headers := broen_object(),
+request := broen_string(),
+method := broen_string(),
+client_data := broen_nullable_string(),
+fullpath := broen_string(),
+appmoddata := broen_string(),
+referer := broen_nullable_string(),
+useragent := broen_string(),
+client_ip := broen_string(),
+routing_key := broen_string(),
+queryobj := broen_object(),
+auth_data := term(),
+querydata => broen_string(),
+postobj => broen_object(),
+multipartobj => term()}.
 %% The format of a broen request that is sent to the serializer plugin. <br/>
 %% <b>cookies</b> - Cookies attached to the HTTP request <br/>
 %% <b>http_headers</b> - HTTP request headers <br/>
@@ -73,13 +75,13 @@ expires => broen_string()}.
 %% <b>multipartobj</b> - Data for the multipart request <br/>
 
 -type broen_response() :: #{
-              payload := term(),
-              status_code => integer(),
-              media_type => content_type(),
-              cookies => broen_cookies(),
-              cookie_path => broen_string(),
-              headers => broen_object()}
-  | #{redirect := unicode:unicode_binary()}.
+payload := term(),
+status_code => integer(),
+media_type => content_type(),
+cookies => broen_cookies(),
+cookie_path => broen_string(),
+headers => broen_object()}
+| #{redirect := unicode:unicode_binary()}.
 %% The format of a broen response that should be returned by the serializer plugin<br/>
 %% <b>payload</b> - The payload of the response<br/>
 %% <b>status_code</b> - Status code of the response<br/>
@@ -272,32 +274,30 @@ append_cors(Headers, Origin, allow_origin) ->
   end.
 
 
-format_cookie(N, CookieValue, DefaultExpires, CookiePath) ->
-  {V, Expires, Domain, Path} = parse_cookie_value(CookieValue, DefaultExpires, CookiePath),
-  Options1 = [{path, binary_to_list(Path)}, {expires, Expires}],
-  Options2 = case Domain of
-               undefined -> Options1;
-               D when is_list(D) -> [{domain, D} | Options1]
+format_cookie(N, CookieValue, DefaultExpires, DefaultCookiePath) ->
+  Expiry = {expires, maps:get(expires, CookieValue, DefaultExpires)},
+  CookiePath = {path, case maps:get(path, CookieValue, DefaultCookiePath) of
+                        B when is_binary(B) -> binary_to_list(B);
+                        L -> L
+
+                      end},
+  Domain = case maps:get(domain, CookieValue, undefined) of
+             undefined -> [];
+             D -> [{domain, binary_to_list(D)}]
+           end,
+
+  Secure = case maps:get(secure, CookieValue, false) of
+             true -> [secure];
+             false -> []
+           end,
+  HttpOnly = case maps:get(http_only, CookieValue, false) of
+               true -> [http_only];
+               false -> []
              end,
-  yaws_api:set_cookie(binary_to_list(N), binary_to_list(V), Options2).
+  Options = [Expiry, CookiePath] ++ Domain ++ Secure ++ HttpOnly,
+  lager:warning("Options ~p", [Options]),
+  yaws_api:set_cookie(binary_to_list(N), binary_to_list(maps:get(value, CookieValue)), Options).
 
-parse_cookie_value(L, DefaultExpires, DefaultCookiePath) ->
-  V = maps:get(value, L),
-
-  ExpiresBin = maps:get(expires, L, undefined),
-  Expiry = case ExpiresBin of
-             undefined -> DefaultExpires;
-             Bin1 when is_binary(Bin1) -> iso8601:parse(binary_to_list(Bin1))
-           end,
-
-  DomainBin = maps:get(domain, L, undefined),
-  Domain = case DomainBin of
-             undefined -> undefined;
-             Bin2 when is_binary(Bin2) -> binary_to_list(Bin2)
-           end,
-
-  CookiePath = maps:get(path, L, DefaultCookiePath),
-  {V, Expiry, Domain, CookiePath}.
 
 format_media_type(undefined)           -> "text/plain";
 format_media_type(B) when is_binary(B) -> binary_to_list(B);
