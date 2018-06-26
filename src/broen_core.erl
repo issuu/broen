@@ -31,6 +31,7 @@
 -type cookie_value() :: #{
 value := broen_string(),
 domain => broen_string(),
+path => broen_string(),
 expires => broen_string()}.
 %% The cookie properties. Each cookie must define a value and may optionally define the domain it applies to and the expiration date
 -type broen_cookies() :: #{cookie_name() => cookie_value()}.
@@ -272,15 +273,15 @@ append_cors(Headers, Origin, allow_origin) ->
 
 
 format_cookie(N, CookieValue, DefaultExpires, CookiePath) ->
-  {V, Expires, Domain} = parse_cookie_value(CookieValue, DefaultExpires),
-  Options1 = [{path, binary_to_list(CookiePath)}, {expires, Expires}],
+  {V, Expires, Domain, Path} = parse_cookie_value(CookieValue, DefaultExpires, CookiePath),
+  Options1 = [{path, Path}, {expires, Expires}],
   Options2 = case Domain of
                undefined -> Options1;
                D when is_list(D) -> [{domain, D} | Options1]
              end,
   yaws_api:set_cookie(binary_to_list(N), binary_to_list(V), Options2).
 
-parse_cookie_value(L, DefaultExpires) ->
+parse_cookie_value(L, DefaultExpires, DefaultCookiePath) ->
   V = maps:get(value, L),
 
   ExpiresBin = maps:get(expires, L, undefined),
@@ -294,7 +295,9 @@ parse_cookie_value(L, DefaultExpires) ->
              undefined -> undefined;
              Bin2 when is_binary(Bin2) -> binary_to_list(Bin2)
            end,
-  {V, Expiry, Domain}.
+
+  CookiePath = maps:get(path, L, DefaultCookiePath),
+  {V, Expiry, Domain, CookiePath}.
 
 format_media_type(undefined)           -> "text/plain";
 format_media_type(B) when is_binary(B) -> binary_to_list(B);
