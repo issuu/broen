@@ -262,7 +262,7 @@ headers(Response, DefaultCookiePath, OriginMode, Origin) ->
   Cookies = maps:to_list(maps:get(cookies, Response, #{})),
   CookiePath = maps:get(cookie_path, Response, DefaultCookiePath),
   Headers = maps:to_list(maps:get(headers, Response, #{})),
-  DefaultExpires = {{2038, 1, 17}, {12, 34, 56}},
+  DefaultExpires = iso8601:format({{2038, 1, 17}, {12, 34, 56}}),
   [format_cookie(N, V, DefaultExpires, CookiePath) || {N, V} <- Cookies] ++
   [{header, {binary_to_list(N), binary_to_list(V)}} || {N, V} <- append_cors(Headers, Origin, OriginMode)].
 
@@ -275,7 +275,7 @@ append_cors(Headers, Origin, allow_origin) ->
 
 
 format_cookie(N, CookieValue, DefaultExpires, DefaultCookiePath) ->
-  Expiry = {expires, maps:get(expires, CookieValue, DefaultExpires)},
+  Expiry = {expires, parse_date(maps:get(expires, CookieValue, DefaultExpires))},
   CookiePath = {path, case maps:get(path, CookieValue, DefaultCookiePath) of
                         B when is_binary(B) -> binary_to_list(B);
                         L -> L
@@ -297,6 +297,14 @@ format_cookie(N, CookieValue, DefaultExpires, DefaultCookiePath) ->
   Options = [Expiry, CookiePath] ++ Domain ++ Secure ++ HttpOnly,
   lager:warning("Options ~p", [Options]),
   yaws_api:set_cookie(binary_to_list(N), binary_to_list(maps:get(value, CookieValue)), Options).
+
+parse_date(Date) ->
+  try
+    iso8601:parse(Date)
+  catch
+    _:badarg ->
+      yaws:stringdate_to_datetime(Date)
+  end.
 
 
 format_media_type(undefined)           -> "text/plain";

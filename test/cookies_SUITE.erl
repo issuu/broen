@@ -17,8 +17,9 @@ init_per_suite(Config) ->
   ConnInfo = amqp_director:parse_connection_parameters(ConnProps),
 
   WorkingUrl = start_server(ConnInfo, "routing_test.cookies", fun cookies/3),
+  OtherUrl = start_server(ConnInfo, "routing_test.cookies_other", fun cookies_other/3),
   timer:sleep(1000),
-  [{url, WorkingUrl} | Config].
+  [{url, WorkingUrl}, {other_url, OtherUrl} | Config].
 end_per_suite(_Config) ->
   ok.
 
@@ -30,7 +31,16 @@ test_cookies(Config) ->
   {ok, {Resp, Props, Payload}} = httpc:request(get, {Url, []}, [], []),
   {_, 200, _} = Resp,
   "application/json" = proplists:get_value("content-type", Props),
-  "test_cookie=11; Version=1; Domain=mine; Path=/; Expires=Sun, 17 Jan 2038 12:34:56 GMT; Secure" = proplists:get_value("set-cookie", Props),
+  "test_cookie=11; Version=1; Domain=mine; Path=/; Expires=Sat, 12 Jan 2030 13:34:56 GMT; Secure" = proplists:get_value("set-cookie", Props),
+
+  #{<<"message">> := <<"Hello!">>} = jsx:decode(list_to_binary(Payload), [return_maps]).
+
+test_other_cookies(Config) ->
+  Url = ?config(other_url, Config),
+  {ok, {Resp, Props, Payload}} = httpc:request(get, {Url, []}, [], []),
+  {_, 200, _} = Resp,
+  "application/json" = proplists:get_value("content-type", Props),
+  "test_cookie=some value; Version=1; Domain=some-other-domain; Path=/call/routing_test; Expires=Sat, 12 Jan 2030 13:34:56 GMT; HttpOnly" = proplists:get_value("set-cookie", Props),
 
   #{<<"message">> := <<"Hello!">>} = jsx:decode(list_to_binary(Payload), [return_maps]).
 
@@ -65,6 +75,19 @@ cookies(Payload, <<"application/json">>, _Type) ->
                        cookies => #{<<"test_cookie">> => #{value => <<"11">>,
                                                            domain => <<"mine">>,
                                                            secure => true,
+                                                           expires => iso8601:format({{2030, 1, 12}, {13, 34, 56}}),
                                                            path => <<"/">>}},
+                       payload => jsx:encode(#{message => <<"Hello!">>})
+                     }), <<"application/json">>}.
+
+cookies_other(Payload, <<"application/json">>, _Type) ->
+  Unpacked = jsx:decode(Payload, [return_maps]),
+  <<"GET">> = maps:get(<<"method">>, Unpacked),
+  {reply, jsx:encode(#{
+                       media_type => <<"application/json">>,
+                       cookies => #{<<"test_cookie">> => #{value => <<"some value">>,
+                                                           domain => <<"some-other-domain">>,
+                                                           http_only => true,
+                                                           expires => "Sat, 12 Jan 2030 13:34:56 GMT"}},
                        payload => jsx:encode(#{message => <<"Hello!">>})
                      }), <<"application/json">>}.
