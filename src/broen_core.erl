@@ -298,6 +298,8 @@ format_cookie(N, CookieValue, DefaultExpires, DefaultCookiePath) ->
   lager:warning("Options ~p", [Options]),
   yaws_api:set_cookie(binary_to_list(N), binary_to_list(maps:get(value, CookieValue)), Options).
 
+parse_date(Date) when is_binary(Date) ->
+  parse_date(binary_to_list(Date));
 parse_date(Date) ->
   try
     iso8601:parse(Date)
