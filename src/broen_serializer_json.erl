@@ -46,6 +46,7 @@ handle_multipart(Else) -> Else.
 serializer_test_() ->
   Request = #{appmoddata => <<"broen_testing_multipart">>, auth_data => [],
               client_data => null, client_ip => <<"127.0.0.1">>, cookies => #{},
+              protocol => http,
               fullpath =>
               <<"some_fullpath">>,
               http_headers =>
