@@ -71,11 +71,15 @@ serializer_test_() ->
   {Serialized, _} = serialize(Request),
   {ok, Deserialized} = deserialize(Serialized, <<"application/json">>),
   NoMultipartReq = maps:map(fun remove_multipart/2, Request),
+  MappedReq = maps:map(fun transform_protocol/2, NoMultipartReq),
   NoMultipartDeserialized = maps:map(fun remove_multipart/2, Deserialized),
   fun() ->
     ?assert(is_binary(Serialized)),
-    ?assertMatch(NoMultipartReq, NoMultipartDeserialized)
+    ?assertMatch(MappedReq, NoMultipartDeserialized)
   end.
 
 remove_multipart(multipartobj, _) -> #{};
 remove_multipart(_, Val)          -> Val.
+
+transform_protocol(protocol, Val) -> atom_to_binary(Val, unicode);
+transform_protocol(_, Val)          -> Val.
