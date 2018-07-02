@@ -19,9 +19,10 @@ init_per_suite(Config) ->
   {ok, ConnProps} = application:get_env(broen, amqp_connection),
   ConnInfo = amqp_director:parse_connection_parameters(ConnProps),
 
-  AuthenticatedUrl = start_server(ConnInfo, "routing_test.auth_url", fun auth_req/3),
+  AuthenticatedUrl = start_server(ConnInfo, "auth_test.auth_url", fun auth_req/3),
+  HttpsUrl = start_server(ConnInfo, "auth_test.https", fun https_req/3),
   timer:sleep(1000),
-  [{url, AuthenticatedUrl}, {old_auth, OldAuthMod} | Config].
+  [{url, AuthenticatedUrl}, {https_url, HttpsUrl}, {old_auth, OldAuthMod} | Config].
 end_per_suite(Config) ->
   AuthMod = ?config(old_auth, Config),
   application:set_env(broen, auth_mod, AuthMod),
@@ -37,6 +38,12 @@ test_auth_module(Config) ->
   "application/json" = proplists:get_value("content-type", Props),
   #{<<"message">> := <<"Hello!">>} = jsx:decode(list_to_binary(Payload), [return_maps]).
 
+test_https(Config) ->
+    Url = ?config(https_url, Config),
+    {ok, {Resp, Props, Payload}} = httpc:request(get, {Url, [{"X-Forwarded-Proto", "https"}]}, [], []),
+    {_, 200, _} = Resp,
+    "application/json" = proplists:get_value("content-type", Props),
+    #{<<"message">> := <<"Hello!">>} = jsx:decode(list_to_binary(Payload), [return_maps]).
 
 start_server(ConnInfo, RoutingKey, Handler) ->
   {ok, Hostname} = inet:gethostname(),
@@ -69,6 +76,22 @@ auth_req(Payload, <<"application/json">>, _Type) ->
                        media_type => <<"application/json">>,
                        payload => jsx:encode(#{message => <<"Hello!">>})
                      }), <<"application/json">>}.
+
+
+https_req(Payload, <<"application/json">>, _Type) ->
+  Unpacked = jsx:decode(Payload, [return_maps]),
+  case maps:get(<<"protocol">>, Unpacked) of
+    <<"https">> ->
+      {reply, jsx:encode(#{
+                            media_type => <<"application/json">>,
+                            payload => jsx:encode(#{message => <<"Hello!">>})
+                          }), <<"application/json">>};
+    _ ->
+      {reply, jsx:encode(#{
+                            media_type => <<"application/json">>,
+                            payload => jsx:encode(#{error => <<"Wrong!">>})
+                          }), <<"application/json">>}
+  end.
 
 authenticate(_Arg) ->
   {ok, #{authenticated => true}, []}.

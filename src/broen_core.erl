@@ -40,6 +40,7 @@
 %% The cookies object maps cookie names to the properties.
 
 -type broen_request() :: #{
+    protocol := broen_string(),
     cookies := broen_object(),
     http_headers := broen_object(),
     request := broen_string(),

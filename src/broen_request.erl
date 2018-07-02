@@ -12,9 +12,10 @@
 -export([build_request/3,
          check_http_origin/2]).
 
--define(XFF_HEADER, 'X-Forwarded-For').
+-define(XFF_HEADER, "X-Forwarded-For").
 -define(XRI_HEADER, "X-Real-Ip").
 -define(XUA_HEADER, "X-User-Agent").
+-define(PROTOCOL_HEADER_NAME, "X-Forwarded-Proto").
 -define(CORS_HEADER, "Origin").
 
 -spec build_request(#arg{}, binary(), list(broen_core:broen_other_key())) -> broen_core:broen_request().
@@ -30,6 +31,7 @@ build_request(#arg{headers    = Headers,
                postobj(Arg),
                multipartobj(Arg),
                #{
+                 protocol => get_protocol_header(Arg),
                  cookies => format_cookies(Arg#arg.headers),
                  http_headers => http_headers(Arg#arg.headers),
                  request => request_type(Request),
@@ -240,6 +242,11 @@ request_type(#http_request{method = 'OPTIONS'})                 -> <<"OPTIONS">>
 request_type(#http_request{method = 'PATCH'})                   -> <<"PATCH">>;
 request_type(#http_request{method = Other}) when is_list(Other) -> list_to_binary(Other).
 
+get_protocol_header(Arg) ->
+    case http_header(Arg, ?PROTOCOL_HEADER_NAME) of
+        "https" -> https;
+        _ -> http
+    end.
 
 match_white_listed_method(RoutingKey, Method) ->
   [M || M <- proplists:get_all_values(RoutingKey, application:get_env(broen, cors_white_list, [])),
