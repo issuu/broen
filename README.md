@@ -178,10 +178,14 @@ The cookies must follow this format:
 
 ```erlang
 -type cookie_name() :: broen_string().
+
 -type cookie_value() :: #{
-              value := broen_string(),
-              domain => broen_string(),
-              expires => broen_string()}.
+    value := broen_string(),
+    domain => broen_string(),
+    path => broen_string(),
+    http_only => boolean(),
+    secure => boolean(),
+    expires => broen_string()}.
 -type broen_cookies() :: #{cookie_name() => cookie_value()}.
 ```
 
