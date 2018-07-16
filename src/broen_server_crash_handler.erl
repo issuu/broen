@@ -10,6 +10,7 @@ crashmsg(_Arg, _ServerConf, Str) ->
   Token = to_hex(crypto:hash(sha256, term_to_binary({Time, Micro, Str}))),
   PrettyString = iolist_to_binary(re:replace(Str, "\n\s*", "", [global])),
   ok = lager:error("Crash: ~p", [[{token, Token}, {msg, PrettyString}]]),
+  folsom_metrics:notify({'broen_core.failure.crash', 1}),
   {ehtml,
    [{h2, [], "Internal error, broen code crashed"},
     {br},
