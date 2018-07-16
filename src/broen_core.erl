@@ -112,6 +112,7 @@ register_metrics() ->
    || C <- ['broen_core.success',
             'broen_core.query.unknown',
             'broen_core.query.unknown.timeout',
+            'broen_core.failure.crash',
             'broen_core.failure.500',
             'broen_core.failure.503',
             'broen_core.failure.404']],
