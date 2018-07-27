@@ -126,7 +126,7 @@ handle(#arg{clidata    = {partial, CliData},
             appmoddata = AppModData,
             cont       = undefined}, _Exch, _CookiePath, _Options) ->
   lager:warning("Partial request ~p of size ~p - Trying to get more ", [AppModData, byte_size(CliData)]),
-  {get_more, {cont, size(liData)}, undefined};
+  {get_more, {cont, size(CliData)}, undefined};
 handle(#arg{clidata    = {partial, CliData},
             appmoddata = AppModData,
             cont       = Cont}, _Exch, _CookiePath, _Options) ->
