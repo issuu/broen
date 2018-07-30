@@ -29,34 +29,34 @@
 -type cookie_name() :: broen_string().
 %% The name of a cookie
 -type cookie_value() :: #{
-    value := broen_string(),
-    domain => broen_string(),
-    path => broen_string(),
-    http_only => boolean(),
-    secure => boolean(),
-    expires => broen_string()}.
+value := broen_string(),
+domain => broen_string(),
+path => broen_string(),
+http_only => boolean(),
+secure => boolean(),
+expires => broen_string()}.
 %% The cookie properties. Each cookie must define a value and may optionally define the domain it applies to and the expiration date
 -type broen_cookies() :: #{cookie_name() => cookie_value()}.
 %% The cookies object maps cookie names to the properties.
 
 -type broen_request() :: #{
-    protocol := http | https,
-    cookies := broen_object(),
-    http_headers := broen_object(),
-    request := broen_string(),
-    method := broen_string(),
-    client_data := broen_nullable_string(),
-    fullpath := broen_string(),
-    appmoddata := broen_string(),
-    referer := broen_nullable_string(),
-    useragent := broen_string(),
-    client_ip := broen_string(),
-    routing_key := broen_string(),
-    queryobj := broen_object(),
-    auth_data := term(),
-    querydata => broen_string(),
-    postobj => broen_object(),
-    multipartobj => term()}.
+protocol := http | https,
+cookies := broen_object(),
+http_headers := broen_object(),
+request := broen_string(),
+method := broen_string(),
+client_data := broen_nullable_string(),
+fullpath := broen_string(),
+appmoddata := broen_string(),
+referer := broen_nullable_string(),
+useragent := broen_string(),
+client_ip := broen_string(),
+routing_key := broen_string(),
+queryobj := broen_object(),
+auth_data := term(),
+querydata => broen_string(),
+postobj => broen_object(),
+multipartobj => term()}.
 %% The format of a broen request that is sent to the serializer plugin. <br/>
 %% <b>cookies</b> - Cookies attached to the HTTP request <br/>
 %% <b>http_headers</b> - HTTP request headers <br/>
@@ -122,6 +122,18 @@ register_metrics() ->
   ok.
 
 %% @doc Main handler processing thin layer requests and replying back
+handle(#arg{clidata    = {partial, CliData},
+            appmoddata = AppModData,
+            cont       = undefined}, _Exch, _CookiePath, _Options) ->
+  lager:warning("Partial request ~p of size ~p - Trying to get more ", [AppModData, byte_size(CliData)]),
+  {get_more, {cont, size(CliData)}, undefined};
+handle(#arg{clidata    = {partial, CliData},
+            appmoddata = AppModData,
+            cont       = Cont}, _Exch, _CookiePath, _Options) ->
+  {cont, Sz0} = Cont,
+  Sz1 = Sz0 + size(CliData),
+  lager:warning("Partial request ~p of size ~p - Trying to get more ", [AppModData, byte_size(CliData)]),
+  {get_more, {cont, Sz1}, undefined};
 handle(#arg{clidata    = CliData,
             appmoddata = AppModData,
             req        = #http_request{method = M}}, _Exch, _CookiePath, _Options)
@@ -266,7 +278,7 @@ headers(Response, DefaultCookiePath, OriginMode, Origin) ->
   Headers = maps:to_list(maps:get(headers, Response, #{})),
   DefaultExpires = iso8601:format({{2038, 1, 17}, {12, 34, 56}}),
   [format_cookie(N, V, DefaultExpires, CookiePath) || {N, V} <- Cookies] ++
-  [{header, {binary_to_list(N), binary_to_list(V)}} || {N, V} <- append_cors(Headers, Origin, OriginMode)].
+    [{header, {binary_to_list(N), binary_to_list(V)}} || {N, V} <- append_cors(Headers, Origin, OriginMode)].
 
 append_cors(Headers, _, same_origin) -> Headers;
 append_cors(Headers, Origin, allow_origin) ->
@@ -279,10 +291,10 @@ append_cors(Headers, Origin, allow_origin) ->
 format_cookie(N, CookieValue, DefaultExpires, DefaultCookiePath) ->
   Expiry = {expires, parse_date(maps:get(expires, CookieValue, DefaultExpires))},
   CookiePath = {path, case maps:get(path, CookieValue, DefaultCookiePath) of
-                        B when is_binary(B) -> binary_to_list(B);
-                        L -> L
+    B when is_binary(B) -> binary_to_list(B);
+    L -> L
 
-                      end},
+  end},
   Domain = case maps:get(domain, CookieValue, undefined) of
              undefined -> [];
              D -> [{domain, binary_to_list(D)}]
