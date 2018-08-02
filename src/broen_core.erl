@@ -125,7 +125,6 @@ register_metrics() ->
 handle(#arg{clidata    = {partial, CliData},
             appmoddata = AppModData,
             cont       = undefined} = Arg, _Exch, _CookiePath, _Options) ->
-  io:format("~p~n", [Arg#arg.state]),
   lager:warning("Partial request ~p of size ~p - Trying to get more ", [AppModData, byte_size(CliData)]),
   {get_more, {cont, size(CliData)}, CliData};
 handle(#arg{clidata    = {partial, CliData},
@@ -134,7 +133,7 @@ handle(#arg{clidata    = {partial, CliData},
             cont       = Cont}, _Exch, _CookiePath, _Options) ->
   {cont, Sz0} = Cont,
   Sz1 = Sz0 + size(CliData),
-  lager:warning("Partial With contrequest ~p of size ~p - Trying to get more ", [AppModData, byte_size(CliData)]),
+  lager:warning("Continued partial request ~p of size ~p - Trying to get more ", [AppModData, byte_size(CliData)]),
   {get_more, {cont, Sz1}, <<State/binary, CliData/binary>>};
 handle(#arg{clidata    = CliData,
             appmoddata = AppModData,
