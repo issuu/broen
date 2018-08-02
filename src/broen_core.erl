@@ -124,16 +124,17 @@ register_metrics() ->
 %% @doc Main handler processing thin layer requests and replying back
 handle(#arg{clidata    = {partial, CliData},
             appmoddata = AppModData,
-            cont       = undefined}, _Exch, _CookiePath, _Options) ->
+            cont       = undefined} = Arg, _Exch, _CookiePath, _Options) ->
   lager:warning("Partial request ~p of size ~p - Trying to get more ", [AppModData, byte_size(CliData)]),
-  {get_more, {cont, size(CliData)}, undefined};
+  {get_more, {cont, size(CliData)}, CliData};
 handle(#arg{clidata    = {partial, CliData},
             appmoddata = AppModData,
+            state = State,
             cont       = Cont}, _Exch, _CookiePath, _Options) ->
   {cont, Sz0} = Cont,
   Sz1 = Sz0 + size(CliData),
-  lager:warning("Partial request ~p of size ~p - Trying to get more ", [AppModData, byte_size(CliData)]),
-  {get_more, {cont, Sz1}, undefined};
+  lager:warning("Continued partial request ~p of size ~p - Trying to get more ", [AppModData, byte_size(CliData)]),
+  {get_more, {cont, Sz1}, <<State/binary, CliData/binary>>};
 handle(#arg{clidata    = CliData,
             appmoddata = AppModData,
             req        = #http_request{method = M}}, _Exch, _CookiePath, _Options)
@@ -145,6 +146,7 @@ handle(#arg{clidata    = CliData,
 handle(Arg, Exch, CookiePath, Options) ->
   RoutingKey = routing_key(Arg#arg.appmoddata, Options),
   Timeout = proplists:get_value(timeout, Options, ?DEFAULT_TIMEOUT),
+
   case broen_request:check_http_origin(Arg, RoutingKey) of
     {_, unknown_origin} ->
       folsom_metrics:notify({'broen_core.failure.403', 1}),
