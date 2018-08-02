@@ -36,7 +36,7 @@ build_request(#arg{headers    = Headers,
                  http_headers => http_headers(Arg#arg.headers),
                  request => request_type(Request),
                  method => request_type(Request),
-                 client_data => client_data(Arg#arg.clidata), %% Size already validated
+                 client_data => client_data(Arg#arg.clidata, Arg#arg.state), %% Size already validated
                  fullpath => list_to_binary(FullPath),
                  appmoddata => list_to_binary(AppModData),
                  referer => referer(Headers),
@@ -114,8 +114,10 @@ format_object(Params) ->
 multipartobj(#arg{state = {multipart, Parts}}) -> #{multipartobj => Parts};
 multipartobj(_)                                -> #{}.
 
-client_data(undefined)           -> null;
-client_data(B) when is_binary(B) -> B.
+client_data(undefined, _)                   -> null;
+client_data(B, undefined) when is_binary(B) -> B;
+client_data(B, Pre) when is_binary(B),
+                         is_binary(Pre)     -> <<Pre/binary, B/binary>>.
 
 %% format_cookies/1 searches for cookies and formats them nicely
 format_cookies(#headers{cookie = HeaderValues}) ->
