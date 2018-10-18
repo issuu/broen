@@ -20,6 +20,7 @@ start(_StartType, _StartArgs) ->
   broen_core:register_metrics(),
   {ok, Pid} = broen_sup:start_link(),
   ok = start_yaws(),
+  start_cowboy(),
   {ok, Pid}.
 
 prep_stop(State) ->
@@ -35,6 +36,14 @@ stop_yaws() ->
   {ok, GC, _Groups} = yaws_api:getconf(),
   ok = yaws_api:setconf(GC, []),
   ok.
+
+start_cowboy() ->
+  Dispatch = cowboy_router:compile([
+                                     {'_', [
+                                       {"/call/[...]", broen_mod, []}
+                                     ]}
+                                   ]),
+  {ok, _} = cowboy:start_clear(my_http_listener, [{port, 7085}], #{env => #{dispatch => Dispatch}}).
 
 start_yaws() ->
   {ok, Port} = application:get_env(broen, port),

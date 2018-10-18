@@ -10,7 +10,8 @@
 
 -include_lib("yaws/include/yaws_api.hrl").
 
--export([handle/4]).
+-export([handle/4,
+         handle_cowboy/4]).
 -export([register_metrics/0]).
 
 -define(CLIENT_REQUEST_BODY_LIMIT, 65536).
@@ -121,15 +122,89 @@ register_metrics() ->
   folsom_metrics:new_spiral('broen_auth.failure'),
   ok.
 
+handle_cowboy(Req0, Exchange, CookiePath, Options) ->
+%%  {Body, Req} = get_body(Req0, <<>>),
+  RoutingKey = routing_key(cowboy_req:path(Req0), Options),
+  Timeout = proplists:get_value(timeout, Options, ?DEFAULT_TIMEOUT),
+  case broen_request:check_http_origin_cowboy(Req0, RoutingKey) of
+    {_, unknown_origin} ->
+      folsom_metrics:notify({'broen_core.failure.403', 1}),
+      cowboy_req:reply(403,
+                       #{<<"content-type">> => <<"text/plain">>},
+                       <<"Forbidden">>,
+                       Req0);
+    {Origin, OriginMode} ->
+      {AmqpRes, ExtraCookies} = amqp_call_cowboy(Req0, Exchange, RoutingKey, Timeout),
+      case AmqpRes of
+        {ok, PackedResponse, ContentType} ->
+          {ok, SerializerMod} = application:get_env(broen, serializer_mod),
+          case SerializerMod:deserialize(PackedResponse, ContentType) of
+            {ok, Response} ->
+              folsom_metrics:notify({'broen_core.success', 1}),
+              build_response(Response, Response, CookiePath, OriginMode, Origin);
+            {error, invalid_content_type} ->
+              folsom_metrics:notify({'broen_core.failure.500', 1}),
+              ReqWithCookies = lists:foldl(fun({Name, Value}, R) -> cowboy_req:set_resp_cookie(Name, Value, R) end,
+                                           Req0, ExtraCookies),
+              cowboy_req:reply(500,
+                               #{<<"content-type">> => <<"text/plain">>},
+                               iolist_to_binary([io_lib:format("Got wrong type of Media Type in response: ~ts",
+                                                               [ContentType])]),
+                               ReqWithCookies)
+          end;
+        {error, timeout} ->
+          {_, MetricTimeout, _} = subsystem_metric(RoutingKey),
+          folsom_metrics:notify({MetricTimeout, 1}),
+          ReqWithCookies = lists:foldl(fun({Name, Value}, R) -> cowboy_req:set_resp_cookie(Name, Value, R) end,
+                                       Req0, ExtraCookies),
+          cowboy_req:reply(504,
+                           #{<<"content-type">> => <<"text/plain">>},
+                           <<"API Broen timeout">>,
+                           ReqWithCookies);
+        {error, {reply_code, 312}} ->
+          folsom_metrics:notify({'broen_core.failure.404', 1}),
+          ReqWithCookies = lists:foldl(fun({Name, Value}, R) -> cowboy_req:set_resp_cookie(Name, Value, R) end,
+                                       Req0, ExtraCookies),
+          cowboy_req:reply(404,
+                           #{<<"content-type">> => <<"text/plain">>},
+                           <<"Not found">>,
+                           ReqWithCookies);
+        {error, no_route} ->
+          folsom_metrics:notify({'broen_core.failure.503', 1}),
+          ReqWithCookies = lists:foldl(fun({Name, Value}, R) -> cowboy_req:set_resp_cookie(Name, Value, R) end,
+                                       Req0, ExtraCookies),
+          cowboy_req:reply(503,
+                           #{<<"content-type">> => <<"text/plain">>},
+                           <<"Service unavailable (no_route)">>,
+                           ReqWithCookies);
+        {error, csrf_verification_failed} ->
+          ReqWithCookies = lists:foldl(fun({Name, Value}, R) -> cowboy_req:set_resp_cookie(Name, Value, R) end,
+                                       Req0, ExtraCookies),
+          cowboy_req:reply(403,
+                           #{<<"content-type">> => <<"text/plain">>},
+                           <<"Forbidden">>,
+                           ReqWithCookies);
+        {error, Reason} ->
+          folsom_metrics:notify({'broen_core.failure.500', 1}),
+          ReqWithCookies = lists:foldl(fun({Name, Value}, R) -> cowboy_req:set_resp_cookie(Name, Value, R) end,
+                                       Req0, ExtraCookies),
+          cowboy_req:reply(500,
+                           #{<<"content-type">> => <<"text/plain">>},
+                           iolist_to_binary([io_lib:format("~p~n", [Reason])]),
+                           ReqWithCookies)
+      end
+  end.
+
+
 %% @doc Main handler processing thin layer requests and replying back
 handle(#arg{clidata    = {partial, CliData},
             appmoddata = AppModData,
-            cont       = undefined} = Arg, _Exch, _CookiePath, _Options) ->
+            cont       = undefined}, _Exch, _CookiePath, _Options) ->
   lager:warning("Partial request ~p of size ~p - Trying to get more ", [AppModData, byte_size(CliData)]),
   {get_more, {cont, size(CliData)}, CliData};
 handle(#arg{clidata    = {partial, CliData},
             appmoddata = AppModData,
-            state = State,
+            state      = State,
             cont       = Cont}, _Exch, _CookiePath, _Options) ->
   {cont, Sz0} = Cont,
   Sz1 = Sz0 + size(CliData),
@@ -194,6 +269,19 @@ handle(Arg, Exch, CookiePath, Options) ->
 
 %% Internal functions
 %% ---------------------------------------------------------------------------------
+amqp_call_cowboy(Req, Exchange, RoutingKey, Timeout) ->
+  TimeZero = os:timestamp(),
+  {ok, AuthMod} = application:get_env(broen, auth_mod),
+  case AuthMod:authenticate(Req) of
+    {error, csrf_verification_failed} -> {{error, csrf_verification_failed}, []};
+    {error, {csrf_verification_failed, Cookies}} ->
+      {{error, csrf_verification_failed}, Cookies};
+    {error, _} ->
+      {handle_http(TimeZero, [], Req, Exchange, RoutingKey, Timeout), []};
+    {ok, AuthData, Cookies} ->
+      {handle_http(TimeZero, AuthData, Req, Exchange, RoutingKey, Timeout), Cookies}
+  end.
+
 amqp_call(Arg, Exch, RoutingKey, Timeout) ->
   TimeZero = os:timestamp(),
   {ok, AuthMod} = application:get_env(broen, auth_mod),
@@ -233,6 +321,11 @@ handle_http(TimeZero, AuthData, Arg, Exch, RoutingKey, Timeout) ->
 
 %% @todo consider hardening this a bit and set up a ruleset.
 %% @todo especially protection against malicious use must be handled here.
+routing_key(Path, Options) when is_binary(Path) ->
+  case valid_route(Path) of
+    invalid -> "route.invalid";
+    valid -> route(proplists:get_bool(keep_dots_in_routing_keys, Options), Path)
+  end;
 routing_key(Path, Options) ->
   list_to_binary(
     case valid_route(Path) of
@@ -241,16 +334,23 @@ routing_key(Path, Options) ->
     end).
 
 %% a path is valid if its length is <= 1024 chars
-valid_route(Path) when length(Path) > 1024 -> invalid;
-valid_route(_)                             -> valid.
+valid_route(Path) when is_binary(Path) and byte_size(Path) > 255 -> invalid;
+valid_route(Path) when is_list(Path) and length(Path) > 1024     -> invalid;
+valid_route(_Path)                                               -> valid.
 
 %% '.' is converted to '_' iff the keep_dots_in_routing_key is false,
 %% otherwise it is left as a '.'
+route(false, Route) when is_binary(Route) ->
+  NoSlashesRoute = binary:replace(Route, <<"/">>, <<".">>, [global]),
+  NoDotsRoute = binary:replace(NoSlashesRoute, <<".">>, <<"_">>, [global]),
+  NoDotsRoute;
+route(true, Route) when is_binary(Route) ->
+  binary:replace(Route, <<"/">>, <<".">>, [global]);
+
 route(Dots, [$/ | Str])  -> [$. | route(Dots, Str)];
 route(false, [$. | Str]) -> [$_ | route(false, Str)];
 route(Dots, [X | Str])   -> [X | route(Dots, Str)];
 route(_, [])             -> [].
-
 
 %% Decoders of various responses
 %% ---------------------------------------------------------------------------------

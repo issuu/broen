@@ -10,7 +10,8 @@
 
 %% API
 -export([build_request/3,
-         check_http_origin/2]).
+         check_http_origin/2,
+         check_http_origin_cowboy/2]).
 
 -define(XFF_HEADER, "X-Forwarded-For").
 -define(XRI_HEADER, "X-Real-Ip").
@@ -46,8 +47,45 @@ build_request(#arg{headers    = Headers,
                  queryobj => format_object(yaws_api:parse_query(Arg)),
                  auth_data => AuthData
                }
+             ]);
+build_request(Req, RoutingKey, AuthData) ->
+  QueryParams = cowboy_req:parse_qs(Req),
+  QueryString = cowboy_req:qs(Req),
+  io:format("Query:: ~p~n", [QueryParams]),
+  io:format("Query:: ~p~n", [QueryString]),
+  {Body, ReadReq} = get_body(Req, <<>>),
+
+  merge_maps([
+               querydata_cowboy(cowboy_req:qs(ReadReq)),
+               postobj_cowboy(ReadReq, Body),
+               multipartobj_cowboy(ReadReq, Body),
+               #{
+                 protocol => case cowboy_req:header(<<?PROTOCOL_HEADER_NAME>>, ReadReq) of
+                   "https" -> https;
+                   _ -> http
+                 end,
+                 cookies => cowboy_req:parse_cookies(ReadReq),
+                 http_headers => cowboy_req:headers(ReadReq),
+                 request => cowboy_req:method(ReadReq),
+                 method => cowboy_req:method(ReadReq),
+                 client_data => Body,
+                 fullpath => cowboy_req:uri(ReadReq),
+                 appmoddata => cowboy_req:path(ReadReq),
+                 referer => cowboy_req:header(<<"referer">>, ReadReq),
+                 user_agent => cowboy_req:header(<<"user-agent">>, ReadReq),
+                 client_ip => iolist_to_binary(client_ip_cowboy(ReadReq)),
+                 routing_key => RoutingKey,
+                 queryobj => QueryParams,
+                 auth_data => AuthData}
              ]).
 
+get_body(Req0, SoFar) ->
+  case cowboy_req:read_body(Req0) of
+    {ok, Data, Req} ->
+      {<<SoFar/binary, Data/binary>>, Req};
+    {more, Data, Req} ->
+      get_body(Req, {<<SoFar/binary, Data/binary>>})
+  end.
 
 -spec check_http_origin(#arg{}, binary()) -> {string(), 'same_origin'|'allow_origin'|'unknown_origin'}.
 check_http_origin(Arg = #arg{headers = Headers, req = Request}, RoutingKey) ->
@@ -55,6 +93,14 @@ check_http_origin(Arg = #arg{headers = Headers, req = Request}, RoutingKey) ->
   Origin = cors_header(Arg),
   Referer = referer(Headers),
   UserAgent = ua(user_agent(Arg)),
+  {Origin, check_http_origin(Method, Origin, RoutingKey, UserAgent, Referer)}.
+
+check_http_origin_cowboy(Req, RoutingKey) ->
+  io:format("~p~n", [Req]),
+  Method = cowboy_req:method(Req),
+  Origin = cowboy_req:header(<<"origin">>, Req),
+  Referer = cowboy_req:header(<<"referer">>, Req),
+  UserAgent = cowboy_req:header(<<"user-agent">>, Req),
   {Origin, check_http_origin(Method, Origin, RoutingKey, UserAgent, Referer)}.
 
 check_http_origin(_Method, undefined, _RoutingKey, _UserAgent, _Referer)     -> same_origin; % Not cross-origin request
@@ -76,6 +122,11 @@ check_http_origin(Method, Origin, RoutingKey, UserAgent, Referer) ->
       end
   end.
 
+parse_uri(Origin) when is_binary(Origin) ->
+  case http_uri:parse(Origin) of
+    {ok, Res} -> binary:split(element(3, Res), <<".">>, [global]);
+    _ -> binary:split(Origin, [<<":">>, <<".">>], [global])
+  end;
 parse_uri(Origin) ->
   case http_uri:parse(Origin) of
     {ok, Res} -> string:tokens(element(3, Res), ".");
@@ -100,11 +151,25 @@ user_agent(Arg) ->
 querydata(undefined) -> #{};
 querydata(Q)         -> #{querydata => list_to_binary(Q)}.
 
+querydata_cowboy([])   -> #{};
+querydata_cowboy(Data) -> #{querydata => Data}.
+
 % if content type is "application/x-www-form-urlencoded" and method is POST, parse post data like queryobj
 postobj(#arg{req = #http_request{method = 'POST'}, headers = #headers{content_type = "application/x-www-form-urlencoded"}} = Arg) ->
   Params = yaws_api:parse_post(Arg),
+  io:format("OLD STUFF ~p~n", [Params]),
   #{postobj => format_object(Params)};
 postobj(_) -> #{}.
+
+postobj_cowboy(Req, Body) ->
+  case cowboy_req:header(<<"content-type">>, Req) of
+    <<"application/x-www-form-urlencoded">> ->
+      {ok, Data, _ReadReq} = cowboy_req:read_body(Req),
+      io:format("PostData:: ~p~n", [Data]),
+      #{postobj => cow_qs:parse_qs(Body)};
+    _ ->
+      #{}
+  end.
 
 format_object(Params) ->
   lists:foldl(fun({K, undefined}, Acc) -> maps:put(list_to_binary(K), <<>>, Acc);
@@ -113,6 +178,18 @@ format_object(Params) ->
 
 multipartobj(#arg{state = {multipart, Parts}}) -> #{multipartobj => Parts};
 multipartobj(_)                                -> #{}.
+
+
+
+multipartobj_cowboy(Req, Body) ->
+  case cowboy_req:header(<<"content-type">>, Req) of
+    <<"multipart/form-data", _/binary>> ->
+      {ok, Data, _ReadReq} = cowboy_req:read_body(Req),
+      io:format("PostData:: ~p~n", [Data]),
+      #{postobj => cow_qs:parse_qs(Body)};
+    _ ->
+      #{}
+  end.
 
 client_data(undefined, _)                   -> null;
 client_data(B, undefined) when is_binary(B) -> B;
@@ -216,6 +293,18 @@ client_ip(Arg = #arg{headers = Headers}) when Headers /= undefined ->
       end
   end.
 
+client_ip_cowboy(Req) ->
+  case {cowboy_req:header(<<?XFF_HEADER>>, Req),
+        cowboy_req:header(<<?XRI_HEADER>>, Req)} of
+    {undefined, undefined} ->
+      {{IP1, IP2, IP3, IP4}, _} = cowboy_req:peer(Req),
+      lists:flatten(io_lib:format("~b.~b.~b.~b", [IP1, IP2, IP3, IP4]));
+    {undefined, Ip} ->
+      Ip;
+    {Ip, _} ->
+      Ip
+  end.
+
 
 to_binary(V) when is_list(V)   -> list_to_binary(V);
 to_binary(V) when is_atom(V)   -> to_binary(atom_to_list(V));
@@ -245,10 +334,10 @@ request_type(#http_request{method = 'PATCH'})                   -> <<"PATCH">>;
 request_type(#http_request{method = Other}) when is_list(Other) -> list_to_binary(Other).
 
 get_protocol_header(Arg) ->
-    case http_header(Arg, ?PROTOCOL_HEADER_NAME) of
-        "https" -> https;
-        _ -> http
-    end.
+  case http_header(Arg, ?PROTOCOL_HEADER_NAME) of
+    "https" -> https;
+    _ -> http
+  end.
 
 match_white_listed_method(RoutingKey, Method) ->
   [M || M <- proplists:get_all_values(RoutingKey, application:get_env(broen, cors_white_list, [])),
@@ -295,4 +384,26 @@ cors_test_() ->
     ?assertMatch(unknown_origin, check_http_origin(<<"POST">>, "http://www.any-origin.com", <<"some.route">>, "", "")),
     ?assertMatch(unknown_origin, check_http_origin(<<"POST">>, "http://www.any-origin.com", <<"allowed.route">>, "", "")),
     ?assertMatch(allow_origin, check_http_origin(<<"PUT">>, "http://www.any-origin.com", <<"allowed.route">>, "", ""))
+  end.
+
+cors_bin_test_() ->
+  application:set_env(broen, cors_allowed_origins, [
+    [<<"test">>, <<"com">>],
+    [<<"test2">>, <<"com">>],
+    [<<"sub">>, <<"test3">>, <<"com">>]
+  ]),
+  application:set_env(broen, cors_white_list, [
+    {<<"allowed.route">>, <<"PUT">>}
+  ]),
+  fun() ->
+    ?assertMatch(allow_origin, check_http_origin(<<"GET">>, <<"http://www.any-origin.com">>, <<"some.route">>, "", "")),
+    ?assertMatch(allow_origin, check_http_origin(<<"POST">>, <<"http://www.test.com">>, <<"some.route">>, "", "")),
+    ?assertMatch(allow_origin, check_http_origin(<<"DELETE">>, <<"http://www.test2.com">>, <<"some.route">>, "", "")),
+    ?assertMatch(allow_origin, check_http_origin(<<"POST">>, <<"http://www.sub.test3.com">>, <<"some.route">>, "", "")),
+    ?assertMatch(unknown_origin, check_http_origin(<<"POST">>, <<"http://www.other.test3.com">>, <<"some.route">>, "", "")),
+    ?assertMatch(allow_origin, check_http_origin(<<"POST">>, <<"http://www.something.test.com">>, <<"some.route">>, "", "")),
+    ?assertMatch(allow_origin, check_http_origin(<<"POST">>, <<"http://www.something.test.com:5000">>, <<"some.route">>, "", "")),
+    ?assertMatch(unknown_origin, check_http_origin(<<"POST">>, <<"http://www.any-origin.com">>, <<"some.route">>, "", "")),
+    ?assertMatch(unknown_origin, check_http_origin(<<"POST">>, <<"http://www.any-origin.com">>, <<"allowed.route">>, "", "")),
+    ?assertMatch(allow_origin, check_http_origin(<<"PUT">>, <<"http://www.any-origin.com">>, <<"allowed.route">>, "", ""))
   end.
