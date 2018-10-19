@@ -9,6 +9,14 @@
 -record(part, {name = "", opts = [], body = []}).
 
 -export([out/1]).
+-export([init/2]).
+
+
+
+init(Req0, State) ->
+  Ret = broen_core:handle_cowboy(Req0, <<"http_exchange">>,
+                                 broen_mod:default_cookie_path(cowboy_req:path(Req0)), []),
+  {ok, Ret, State}.
 
 out(#arg{req = #http_request{method = 'POST'}, headers = #headers{content_type = "multipart/form-data" ++ _}, state = State} = Arg) ->
   State1 = case State of undefined -> #multipart_state{}; V -> V end,

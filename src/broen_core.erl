@@ -123,8 +123,7 @@ register_metrics() ->
   ok.
 
 handle_cowboy(Req0, Exchange, CookiePath, Options) ->
-%%  {Body, Req} = get_body(Req0, <<>>),
-  RoutingKey = routing_key(cowboy_req:path(Req0), Options),
+  RoutingKey = routing_key_cowboy(cowboy_req:path_info(Req0), Options),
   Timeout = proplists:get_value(timeout, Options, ?DEFAULT_TIMEOUT),
   case broen_request:check_http_origin_cowboy(Req0, RoutingKey) of
     {_, unknown_origin} ->
@@ -135,17 +134,17 @@ handle_cowboy(Req0, Exchange, CookiePath, Options) ->
                        Req0);
     {Origin, OriginMode} ->
       {AmqpRes, ExtraCookies} = amqp_call_cowboy(Req0, Exchange, RoutingKey, Timeout),
+      ReqWithCookies = lists:foldl(fun({Name, Value}, R) -> cowboy_req:set_resp_cookie(Name, Value, R) end,
+                                   Req0, ExtraCookies),
       case AmqpRes of
         {ok, PackedResponse, ContentType} ->
           {ok, SerializerMod} = application:get_env(broen, serializer_mod),
           case SerializerMod:deserialize(PackedResponse, ContentType) of
             {ok, Response} ->
               folsom_metrics:notify({'broen_core.success', 1}),
-              build_response(Response, Response, CookiePath, OriginMode, Origin);
+              build_response_cowboy(ReqWithCookies, Response, CookiePath, OriginMode, Origin);
             {error, invalid_content_type} ->
               folsom_metrics:notify({'broen_core.failure.500', 1}),
-              ReqWithCookies = lists:foldl(fun({Name, Value}, R) -> cowboy_req:set_resp_cookie(Name, Value, R) end,
-                                           Req0, ExtraCookies),
               cowboy_req:reply(500,
                                #{<<"content-type">> => <<"text/plain">>},
                                iolist_to_binary([io_lib:format("Got wrong type of Media Type in response: ~ts",
@@ -155,39 +154,29 @@ handle_cowboy(Req0, Exchange, CookiePath, Options) ->
         {error, timeout} ->
           {_, MetricTimeout, _} = subsystem_metric(RoutingKey),
           folsom_metrics:notify({MetricTimeout, 1}),
-          ReqWithCookies = lists:foldl(fun({Name, Value}, R) -> cowboy_req:set_resp_cookie(Name, Value, R) end,
-                                       Req0, ExtraCookies),
           cowboy_req:reply(504,
                            #{<<"content-type">> => <<"text/plain">>},
                            <<"API Broen timeout">>,
                            ReqWithCookies);
         {error, {reply_code, 312}} ->
           folsom_metrics:notify({'broen_core.failure.404', 1}),
-          ReqWithCookies = lists:foldl(fun({Name, Value}, R) -> cowboy_req:set_resp_cookie(Name, Value, R) end,
-                                       Req0, ExtraCookies),
           cowboy_req:reply(404,
                            #{<<"content-type">> => <<"text/plain">>},
                            <<"Not found">>,
                            ReqWithCookies);
         {error, no_route} ->
           folsom_metrics:notify({'broen_core.failure.503', 1}),
-          ReqWithCookies = lists:foldl(fun({Name, Value}, R) -> cowboy_req:set_resp_cookie(Name, Value, R) end,
-                                       Req0, ExtraCookies),
           cowboy_req:reply(503,
                            #{<<"content-type">> => <<"text/plain">>},
                            <<"Service unavailable (no_route)">>,
                            ReqWithCookies);
         {error, csrf_verification_failed} ->
-          ReqWithCookies = lists:foldl(fun({Name, Value}, R) -> cowboy_req:set_resp_cookie(Name, Value, R) end,
-                                       Req0, ExtraCookies),
           cowboy_req:reply(403,
                            #{<<"content-type">> => <<"text/plain">>},
                            <<"Forbidden">>,
                            ReqWithCookies);
         {error, Reason} ->
           folsom_metrics:notify({'broen_core.failure.500', 1}),
-          ReqWithCookies = lists:foldl(fun({Name, Value}, R) -> cowboy_req:set_resp_cookie(Name, Value, R) end,
-                                       Req0, ExtraCookies),
           cowboy_req:reply(500,
                            #{<<"content-type">> => <<"text/plain">>},
                            iolist_to_binary([io_lib:format("~p~n", [Reason])]),
@@ -321,17 +310,22 @@ handle_http(TimeZero, AuthData, Arg, Exch, RoutingKey, Timeout) ->
 
 %% @todo consider hardening this a bit and set up a ruleset.
 %% @todo especially protection against malicious use must be handled here.
-routing_key(Path, Options) when is_binary(Path) ->
-  case valid_route(Path) of
-    invalid -> "route.invalid";
-    valid -> route(proplists:get_bool(keep_dots_in_routing_keys, Options), Path)
-  end;
+routing_key_cowboy(Path, Options) ->
+  case valid_route_cowboy(Path) of
+    false -> <<"route.invalid">>;
+    true -> route_cowboy(proplists:get_bool(keep_dots_in_routing_keys, Options), Path)
+  end.
+
 routing_key(Path, Options) ->
   list_to_binary(
     case valid_route(Path) of
       valid -> route(proplists:get_bool(keep_dots_in_routing_keys, Options), Path);
       invalid -> "route.invalid"
     end).
+
+valid_route_cowboy(Paths) ->
+  Sum = lists:foldl(fun(El, Sum) -> Sum + byte_size(El) end, 0, Paths),
+  Sum =< 255.
 
 %% a path is valid if its length is <= 1024 chars
 valid_route(Path) when is_binary(Path) and byte_size(Path) > 255 -> invalid;
@@ -340,12 +334,11 @@ valid_route(_Path)                                               -> valid.
 
 %% '.' is converted to '_' iff the keep_dots_in_routing_key is false,
 %% otherwise it is left as a '.'
-route(false, Route) when is_binary(Route) ->
-  NoSlashesRoute = binary:replace(Route, <<"/">>, <<".">>, [global]),
-  NoDotsRoute = binary:replace(NoSlashesRoute, <<".">>, <<"_">>, [global]),
-  NoDotsRoute;
-route(true, Route) when is_binary(Route) ->
-  binary:replace(Route, <<"/">>, <<".">>, [global]);
+route_cowboy(false, Route) ->
+  Mapped = lists:map(fun(El) -> binary:replace(El, <<".">>, <<"_">>, [global]) end, Route),
+  route_cowboy(true, Mapped);
+route_cowboy(true, [First | Rest]) ->
+  lists:foldl(fun(El, SoFar) -> <<SoFar/binary, ".", El/binary>> end, First, Rest).
 
 route(Dots, [$/ | Str])  -> [$. | route(Dots, Str)];
 route(false, [$. | Str]) -> [$_ | route(false, Str)];
@@ -358,6 +351,26 @@ build_response(#{redirect := URL}, _, _, _, _) ->
   [{redirect, binary_to_list(URL)}];
 build_response(Response, Response, CookiePath, OriginMode, Origin) ->
   content(Response, CookiePath, OriginMode, Origin) ++ status_code(Response).
+
+
+build_response_cowboy(Req, #{redirect := URL}, _, _, _) ->
+  cowboy_req:reply(
+    302,
+    [{<<"location">>, URL}],
+    <<>>,
+    Req
+  );
+build_response_cowboy(Req, Response, CookiePath, OriginMode, Origin) ->
+  StatusCode = maps:get(status_code, Response, 200),
+  Content = maps:get(payload, Response, <<>>),
+  MediaType = maps:get(media_type, Response, <<>>),
+  RespwithCookies = cookies_cowboy(Req, Response, CookiePath),
+  cowboy_req:reply(
+    StatusCode,
+    maps:from_list(headers_cowboy(Response, OriginMode, Origin) ++ [{<<"content-type">>, MediaType}]),
+    Content,
+    RespwithCookies
+  ).
 
 status_code(Response) ->
   case maps:find(status_code, Response) of
@@ -374,6 +387,10 @@ content(Response, DefaultCookiePath, OriginMode, Origin) ->
       [{content, format_media_type(MediaType), Payload}] ++ Headers
   end.
 
+headers_cowboy(Response, OriginMode, Origin) ->
+  Headers = maps:to_list(maps:get(headers, Response, #{})),
+  [{binary_to_list(N), binary_to_list(V)} || {N, V} <- append_cors(Headers, Origin, OriginMode)].
+
 headers(Response, DefaultCookiePath, OriginMode, Origin) ->
   Cookies = maps:to_list(maps:get(cookies, Response, #{})),
   CookiePath = maps:get(cookie_path, Response, DefaultCookiePath),
@@ -389,6 +406,29 @@ append_cors(Headers, Origin, allow_origin) ->
     _ -> Headers
   end.
 
+cookies_cowboy(InitialReq, Response, DefaultCookiePath) ->
+  Cookies = maps:to_list(maps:get(cookies, Response, #{})),
+  CookiePath = maps:get(cookie_path, Response, DefaultCookiePath),
+  DefaultExpires = iso8601:format({{2038, 1, 17}, {12, 34, 56}}),
+  lists:foldl(fun(Cookie, Req) -> set_cookie(Cookie, CookiePath, DefaultExpires, Req)
+              end, InitialReq, Cookies).
+
+set_cookie({CookieName, CookieValue}, DefaultCookiePath, DefaultExpires, Req) ->
+  Expiry = parse_expiry(maps:get(expires, CookieValue, DefaultExpires)),
+  CookiePath = maps:get(path, CookieValue, DefaultCookiePath),
+  Domain = maps:get(domain, CookieValue, undefined),
+  Secure = maps:get(secure, CookieValue, false),
+  HttpOnly = maps:get(http_only, CookieValue, false),
+  Value = maps:get(value, CookieValue),
+  cowboy_req:set_resp_cookie(CookieName, cow_qs:urlencode(Value),
+                             Req,
+                             #{
+                               domain => Domain,
+                               path => CookiePath,
+                               secure => Secure,
+                               http_only => HttpOnly,
+                               max_age => Expiry
+                             }).
 
 format_cookie(N, CookieValue, DefaultExpires, DefaultCookiePath) ->
   Expiry = {expires, parse_date(maps:get(expires, CookieValue, DefaultExpires))},
@@ -413,6 +453,17 @@ format_cookie(N, CookieValue, DefaultExpires, DefaultCookiePath) ->
   Options = [Expiry, CookiePath] ++ Domain ++ Secure ++ HttpOnly,
   lager:warning("Options ~p", [Options]),
   yaws_api:set_cookie(binary_to_list(N), binary_to_list(maps:get(value, CookieValue)), Options).
+
+parse_expiry(Date) ->
+  ParsedDate = parse_date(Date),
+  UTC = calendar:universal_time(),
+  Secs = calendar:datetime_to_gregorian_seconds(UTC),
+  Expires = calendar:datetime_to_gregorian_seconds(ParsedDate),
+  if
+    Expires - Secs > 0 -> Expires - Secs;
+    true -> 0
+  end.
+
 
 parse_date(Date) when is_binary(Date) ->
   parse_date(binary_to_list(Date));

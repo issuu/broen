@@ -8,7 +8,6 @@
 -export([default_cookie_path/1]).
 
 out(Arg) ->
-  io:format("~p~n", [Arg#arg.server_path]),
  broen_core:handle(Arg, <<"http_exchange">>, default_cookie_path(Arg#arg.server_path), []).
 
 -spec default_cookie_path(string()) -> binary().
@@ -25,6 +24,5 @@ default_cookie_path(ServerPath) ->
   end.
 
 init(Req0, State) ->
-  io:format("~p~n", [cowboy_req:path(Req0)]),
   Ret = broen_core:handle_cowboy(Req0, <<"http_exchange">>, default_cookie_path(cowboy_req:path(Req0)), []),
   {ok, Ret, State}.

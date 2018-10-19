@@ -40,8 +40,11 @@ stop_yaws() ->
 start_cowboy() ->
   Dispatch = cowboy_router:compile([
                                      {'_', [
-                                       {"/call/[...]", broen_mod, []}
-                                     ]}
+                                       {"/call/[...]", broen_mod, []},
+                                       {"/internal_call/[...]", broen_mod_internal, []},                                       {"/call/[...]", broen_mod, []},
+                                       {"/res/[...]", broen_mod_res, []},
+                                       {"/multipart/[...]", broen_mod_multipart, []}
+                                       ]}
                                    ]),
   {ok, _} = cowboy:start_clear(my_http_listener, [{port, 7085}], #{env => #{dispatch => Dispatch}}).
 

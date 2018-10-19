@@ -23,7 +23,7 @@ init_per_suite(Config) ->
   [{working_url, WorkingUrl},
    {not_found_url, NotFoundUrl},
    {post_url, PostUrl},
-   {non_existent_url, "http://localhost:7083/call/whatisthis/i/dont/even"} | Config].
+   {non_existent_url, "http://localhost:7085/call/whatisthis/i/dont/even"} | Config].
 end_per_suite(_Config) ->
   ok.
 
@@ -58,7 +58,7 @@ start_server(ConnInfo, RoutingKey, Handler) ->
   {ok, Hostname} = inet:gethostname(),
   UrlBit = lists:flatten(string:replace(RoutingKey, ".", "/", all)),
   QueueName = iolist_to_binary([RoutingKey, "-", Hostname]),
-  WorkingUrl = "http://localhost:7083/call/" ++ UrlBit,
+  WorkingUrl = "http://localhost:7085/call/" ++ UrlBit,
 
   AmqpConfig = [{exchange, <<"http_exchange">>},
                 {consume_queue, QueueName},

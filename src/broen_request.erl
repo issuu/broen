@@ -49,35 +49,76 @@ build_request(#arg{headers    = Headers,
                }
              ]);
 build_request(Req, RoutingKey, AuthData) ->
-  QueryParams = cowboy_req:parse_qs(Req),
-  QueryString = cowboy_req:qs(Req),
-  io:format("Query:: ~p~n", [QueryParams]),
-  io:format("Query:: ~p~n", [QueryString]),
-  {Body, ReadReq} = get_body(Req, <<>>),
-
+  {Body, ReadReq} = get_body(Req),
   merge_maps([
                querydata_cowboy(cowboy_req:qs(ReadReq)),
                postobj_cowboy(ReadReq, Body),
-               multipartobj_cowboy(ReadReq, Body),
+               body(ReadReq, Body),
                #{
-                 protocol => case cowboy_req:header(<<?PROTOCOL_HEADER_NAME>>, ReadReq) of
-                   "https" -> https;
+                 protocol => case cowboy_req:header(<<"x-forwarded-proto">>, ReadReq) of
+                   <<"https">> -> https;
                    _ -> http
                  end,
-                 cookies => cowboy_req:parse_cookies(ReadReq),
+                 cookies => maps:from_list(cowboy_req:parse_cookies(ReadReq)),
                  http_headers => cowboy_req:headers(ReadReq),
                  request => cowboy_req:method(ReadReq),
                  method => cowboy_req:method(ReadReq),
-                 client_data => Body,
-                 fullpath => cowboy_req:uri(ReadReq),
+                 fullpath => iolist_to_binary(cowboy_req:uri(ReadReq)),
                  appmoddata => cowboy_req:path(ReadReq),
                  referer => cowboy_req:header(<<"referer">>, ReadReq),
                  user_agent => cowboy_req:header(<<"user-agent">>, ReadReq),
                  client_ip => iolist_to_binary(client_ip_cowboy(ReadReq)),
                  routing_key => RoutingKey,
-                 queryobj => QueryParams,
+                 queryobj => maps:from_list(cowboy_req:parse_qs(Req)),
                  auth_data => AuthData}
              ]).
+
+get_body(Req) ->
+  case cowboy_req:header(<<"content-type">>, Req) of
+    <<"multipart/form-data", _/binary>> ->
+      B = get_body_multipart(Req, []),
+      B;
+    _ ->
+      get_body(Req, <<>>)
+  end.
+
+get_body_multipart(Req0, Acc) ->
+  case cowboy_req:read_part(Req0) of
+    {ok, Headers, Req1} ->
+      {ok, Body, Req} = stream_body(Req1, <<>>),
+      get_body_multipart(Req, [{Headers, Body} | Acc]);
+    {done, Req} ->
+      {{[parse_part(P) || P <- lists:reverse(Acc)]}, Req}
+  end.
+
+parse_part({#{<<"content-disposition">> := <<"form-data; ", Rest/binary>>} = M, Body}) ->
+  Parts = binary:split(Rest, <<";">>, [global]),
+  Parsed = [begin
+              Trimmed = trim_part(P),
+              NoQuotes = binary:replace(Trimmed, <<"\"">>, <<>>, [global]),
+              [K, V] = binary:split(NoQuotes, <<"=">>, [global]),
+              {K, V}
+            end || P <- Parts],
+  {value, {_, Name}, OtherData} = lists:keytake(<<"name">>, 1, Parsed),
+
+  {_, M2} = maps:take(<<"content-disposition">>, M),
+  {Name, {[
+            {<<"opts">>, {OtherData ++ maps:to_list(M2)}},
+            {<<"body">>, Body}
+
+          ]}}.
+
+
+trim_part(<<" ", Rest/binary>>) -> trim_part(Rest);
+trim_part(B)                    -> B.
+
+stream_body(Req0, Acc) ->
+  case cowboy_req:read_part_body(Req0) of
+    {more, Data, Req} ->
+      stream_body(Req, <<Acc/binary, Data/binary>>);
+    {ok, Data, Req} ->
+      {ok, <<Acc/binary, Data/binary>>, Req}
+  end.
 
 get_body(Req0, SoFar) ->
   case cowboy_req:read_body(Req0) of
@@ -96,7 +137,6 @@ check_http_origin(Arg = #arg{headers = Headers, req = Request}, RoutingKey) ->
   {Origin, check_http_origin(Method, Origin, RoutingKey, UserAgent, Referer)}.
 
 check_http_origin_cowboy(Req, RoutingKey) ->
-  io:format("~p~n", [Req]),
   Method = cowboy_req:method(Req),
   Origin = cowboy_req:header(<<"origin">>, Req),
   Referer = cowboy_req:header(<<"referer">>, Req),
@@ -157,15 +197,12 @@ querydata_cowboy(Data) -> #{querydata => Data}.
 % if content type is "application/x-www-form-urlencoded" and method is POST, parse post data like queryobj
 postobj(#arg{req = #http_request{method = 'POST'}, headers = #headers{content_type = "application/x-www-form-urlencoded"}} = Arg) ->
   Params = yaws_api:parse_post(Arg),
-  io:format("OLD STUFF ~p~n", [Params]),
   #{postobj => format_object(Params)};
 postobj(_) -> #{}.
 
 postobj_cowboy(Req, Body) ->
   case cowboy_req:header(<<"content-type">>, Req) of
     <<"application/x-www-form-urlencoded">> ->
-      {ok, Data, _ReadReq} = cowboy_req:read_body(Req),
-      io:format("PostData:: ~p~n", [Data]),
       #{postobj => cow_qs:parse_qs(Body)};
     _ ->
       #{}
@@ -181,14 +218,12 @@ multipartobj(_)                                -> #{}.
 
 
 
-multipartobj_cowboy(Req, Body) ->
+body(Req, Body) ->
   case cowboy_req:header(<<"content-type">>, Req) of
     <<"multipart/form-data", _/binary>> ->
-      {ok, Data, _ReadReq} = cowboy_req:read_body(Req),
-      io:format("PostData:: ~p~n", [Data]),
-      #{postobj => cow_qs:parse_qs(Body)};
+      #{multipartobj => Body};
     _ ->
-      #{}
+      #{client_data => Body}
   end.
 
 client_data(undefined, _)                   -> null;
@@ -294,8 +329,8 @@ client_ip(Arg = #arg{headers = Headers}) when Headers /= undefined ->
   end.
 
 client_ip_cowboy(Req) ->
-  case {cowboy_req:header(<<?XFF_HEADER>>, Req),
-        cowboy_req:header(<<?XRI_HEADER>>, Req)} of
+  case {cowboy_req:header(<<"x-forwarded-for">>, Req),
+        cowboy_req:header(<<"x-real-ip">>, Req)} of
     {undefined, undefined} ->
       {{IP1, IP2, IP3, IP4}, _} = cowboy_req:peer(Req),
       lists:flatten(io_lib:format("~b.~b.~b.~b", [IP1, IP2, IP3, IP4]));
