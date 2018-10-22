@@ -196,10 +196,10 @@ handle(Req0, Exchange, CookiePath, Options) ->
         end
     end
   catch
-    _:Error:Stacktrace ->
+    _: Error ->
       Now = erlang:timestamp(),
       Token = base64:encode(crypto:hash(sha256, term_to_binary(Now))),
-      ok = lager:error("Crash: ~p Error: ~p StackTrace: ~p", [Token, Error, Stacktrace]),
+      ok = lager:error("Crash: ~p Error: ~p StackTrace: ~p", [Token, Error, erlang:get_stacktrace()]),
       folsom_metrics:notify({'broen_core.failure.crash', 1}),
       cowboy_req:reply(500,
                        #{<<"content-type">> => <<"text/plain">>},
