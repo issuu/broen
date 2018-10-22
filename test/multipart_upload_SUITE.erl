@@ -33,7 +33,7 @@ init_per_suite(Config) ->
   {ok, Hostname} = inet:gethostname(),
   RoutingKey = "broen_testing_multipart",
   QueueName = iolist_to_binary([RoutingKey, "-", Hostname]),
-  PostUrl = "http://localhost:7085/multipart/" ++ RoutingKey,
+  PostUrl = "http://localhost:7083/multipart/" ++ RoutingKey,
 
   AmqpConfig = [{exchange, <<"http_exchange">>},
                 {consume_queue, QueueName},

@@ -10,7 +10,7 @@
       iso8601,
       inets,
       mnesia,
-      yaws,
+      cowboy,
       folsom,
       amqp_director,
       jsx
