@@ -1,8 +1,15 @@
 Broen 🇩🇰🌉🇸🇪
 ==================
 [![Build Status](https://travis-ci.org/issuu/broen.svg?branch=master)](https://travis-ci.org/issuu/broen)
+[![Hex.pm Version](http://img.shields.io/hexpm/v/exgencode.svg?style=flat)](https://hex.pm/packages/broen)
 
 The HTTP/AMQP bridge library that allows you to change your HTTP requests into AMQP RPC calls.
+
+
+## Broen 2.0
+Broen 2.0 is now `cowboy` based, which also means it is [available on Hex!](https://hex.pm/packages/broen)
+
+
 
 ## Overview
 `broen` turns any HTTP requests into a AMQP message, using the path of the
@@ -14,7 +21,7 @@ route frontend requets to the right microservice-backend.
 For example, A GET request on `/hello/service/42?foo=bar` is turned into a message with routing-key `hello.service.42`, and will contain `method=<<"GET">>` and `querydata=<<"foo=bar">>`. See [Request section](#request) for more information.
 
 `broen` provides:
-* Web server using [yaws](http://yaws.hyber.org/)
+* Web server using [cowboy](https://github.com/ninenines/cowboy)
 * Forwarding of HTTP requests to an AMQP broker
 * Handling of multipart requests
 * Optional authentication of requests
@@ -42,32 +49,25 @@ The minimal `broen` config should can look like this:
             {port, undefined},
             {username, <<"guest">>},
             {password, <<"guest">>}]},
-          {server_name, "api.localhost"},
-          {log_dir, "log"},
           {listen, {0, 0, 0, 0}},
           {port, 7083},
           {internalport, 7084},
           {cors_white_list, []}
-]},
- {yaws, [
-   {embedded, true}
- ]}
+]}
 ```
 
-This defines a connection to a local AMQP broker with default guest/guest login, the IP address of the `broen` server as well as defining `/call` endpoint on port `7083` and `/internal_call` on `7084`. Please also not the `yaws` configuration parameter that is necessary for `broen` to operate correctly.
+This defines a connection to a local AMQP broker with default guest/guest login, the IP address of the `broen` server as well as defining `/call` endpoint on port `7083` and `/internal_call` on `7084`.
 
 All configuration parameters are as follow:
 
 ```erlang
 {broen, [
-    {server_name, "api.mybroen.com"},
     {amqp_connection, [
       {host, "amqp"},
       {port, undefined},
       {username, <<"myuser">>},
       {password, <<"secretpassword">>}
     ]},
-    {log_dir, "log"},
     {listen, {0, 0, 0, 0}},
     {port, 7083},
     {internalport, 7084},
@@ -75,8 +75,8 @@ All configuration parameters are as follow:
       {<<"friendly.request">>, <<"POST">>}
     ]},
     {cors_allowed_origins, [
-      ["mybroen", "com"],
-      ["//mybroen", "com"],
+      [<<"mybroen">>, <<"com">>],
+      [<<"//mybroen">>, <<"com">>],
     ]},
     {auth_mod, my_custom_auth},
     {serializer_mod, my_custom_serializer},
@@ -87,9 +87,7 @@ All configuration parameters are as follow:
   ]}
   ```
   Where:
-  * `server_name :: string()` - The name of the server, used only internally
   * `amqp_connection :: [{host, string()}, {port :: non_neg_integer() | undefined}, {username, binary()}, {password, binary()}]` - The configuration for the connection to the RabbitMQ broker
-  * `log_dir :: string()` - Defines the default logging directory for `lager`
   * `listen :: inet:ip4_address()` - Defines the IP address the server will listen on
   * `port :: non_neg_integer()` - Defines the port for the `/call` endpoint
   * `internalport :: non_neg_integer()` - Defines the port for the `/internal_call` endpoint
@@ -145,7 +143,7 @@ The request type is defined as follows (see the [Erlang type documentation](http
               request := broen_string(),                % The HTTP method
               method := broen_string(),                 % Same as above
               client_data := broen_nullable_string(),
-              fullpath := broen_string(),               % Full path of the request as provided by Yaws
+              fullpath := broen_string(),               % Full path of the request
               appmoddata := broen_string(),             % The URL that is turned into the routing key (i.e. what follows /call)
               referer := broen_nullable_string(),       % The referer URL
               useragent := broen_string(),              % User agent data
@@ -190,16 +188,16 @@ The cookies must follow this format:
 ```
 
 ## Authentication
-`broen` allows for an optional authentication mechanism for each request. The authentication module can be plugged in by using `auth_mod` configuration option. The authentication module will receive the raw request in the Yaws format and can then perform any operations. By default `broen` ships with `broen_auth_dummy` module, which simply does nothing.
+`broen` allows for an optional authentication mechanism for each request. The authentication module can be plugged in by using `auth_mod` configuration option. The authentication module will receive the raw request in the `cowboy` format and can then perform any operations. By default `broen` ships with `broen_auth_dummy` module, which simply does nothing.
 
 An authentication module must implement the following function:
 ```erlang
--type cookies() :: [{binary(), binary()}]
--spec authenticate(#arg{}) -> {ok, Result :: term(), Cookies :: cookies() } | {error, {csrf_verification_failed, cookies()}} | {error, term()}.
+-type cookies() :: [{Name :: binary(), #{value => binary(), max_age => integer(), path => Binary, domain => Binary}}]
+-spec authenticate(Req :: map()) -> {ok, Result :: term(), Cookies :: cookies() } | {error, {csrf_verification_failed, cookies()}} | {error, term()}.
 ```
 Where:
 
-* `#arg{}` is a Yaws request from `yaws/include/yaws_api.hrl`
+* `Req` is a request coming from `cowboy`
 
 The possible returns are:
 * `{ok, Result :: term(), Cookies:: cookies()}` - When the authentication is successfull. `Result` may contain an arbitrary data that will then be passed in the `auth_data` key of the request. See [Request section](#request) for details. Cookies are a list of key value pairs of strings.
@@ -255,3 +253,9 @@ start_server(ConnInfo, RoutingKey, Handler) ->
 ```
 
 More examples can be found in the tests for `broen`.
+
+
+## Migrating to 2.0
+The only difference in 2.0 is that `broen` no longer uses Yaws, switching instead to `cowboy`. That means `yaws` configuration is no longer relevant.
+
+Additionally, `cors_allowed_origins` option in `sys.config` must now be binary strings.
