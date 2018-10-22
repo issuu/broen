@@ -124,75 +124,87 @@ register_metrics() ->
   ok.
 
 handle(Req0, Exchange, CookiePath, Options) ->
-  RoutingKey = routing_key(cowboy_req:path_info(Req0), Options),
-  Timeout = proplists:get_value(timeout, Options, ?DEFAULT_TIMEOUT),
-  case broen_request:check_http_origin(Req0, RoutingKey) of
-    {_, unknown_origin} ->
-      folsom_metrics:notify({'broen_core.failure.403', 1}),
-      cowboy_req:reply(403,
+  try
+    RoutingKey = routing_key(cowboy_req:path_info(Req0), Options),
+    Timeout = proplists:get_value(timeout, Options, ?DEFAULT_TIMEOUT),
+    case broen_request:check_http_origin(Req0, RoutingKey) of
+      {_, unknown_origin} ->
+        folsom_metrics:notify({'broen_core.failure.403', 1}),
+        cowboy_req:reply(403,
+                         #{<<"content-type">> => <<"text/plain">>},
+                         <<"Forbidden">>,
+                         Req0);
+      {Origin, OriginMode} ->
+        {AmqpRes, ExtraCookies} = amqp_call(Req0, Exchange, RoutingKey, Timeout),
+        ReqWithCookies = lists:foldl(fun({CookieName, CookieValue}, R) ->
+
+          Value = maps:get(value, CookieValue),
+          MaxAge = maps:get(max_age, CookieValue),
+          Path = maps:get(path, CookieValue, <<"/">>),
+          Domain = maps:get(domain, CookieValue),
+
+          cowboy_req:set_resp_cookie(CookieName, Value, R, #{
+            domain => Domain,
+            path => Path,
+            max_age => MaxAge
+          }) end,                    Req0, ExtraCookies),
+        case AmqpRes of
+          {ok, PackedResponse, ContentType} ->
+            {ok, SerializerMod} = application:get_env(broen, serializer_mod),
+            case SerializerMod:deserialize(PackedResponse, ContentType) of
+              {ok, Response} ->
+                folsom_metrics:notify({'broen_core.success', 1}),
+                build_response(ReqWithCookies, Response, CookiePath, OriginMode, Origin);
+              {error, invalid_content_type} ->
+                folsom_metrics:notify({'broen_core.failure.500', 1}),
+                cowboy_req:reply(500,
+                                 #{<<"content-type">> => <<"text/plain">>},
+                                 iolist_to_binary([io_lib:format("Got wrong type of Media Type in response: ~ts",
+                                                                 [ContentType])]),
+                                 ReqWithCookies)
+            end;
+          {error, timeout} ->
+            {_, MetricTimeout, _} = subsystem_metric(RoutingKey),
+            folsom_metrics:notify({MetricTimeout, 1}),
+            cowboy_req:reply(504,
+                             #{<<"content-type">> => <<"text/plain">>},
+                             <<"API Broen timeout">>,
+                             ReqWithCookies);
+          {error, {reply_code, 312}} ->
+            folsom_metrics:notify({'broen_core.failure.404', 1}),
+            cowboy_req:reply(404,
+                             #{<<"content-type">> => <<"text/plain">>},
+                             <<"Not found">>,
+                             ReqWithCookies);
+          {error, no_route} ->
+            folsom_metrics:notify({'broen_core.failure.503', 1}),
+            cowboy_req:reply(503,
+                             #{<<"content-type">> => <<"text/plain">>},
+                             <<"Service unavailable (no_route)">>,
+                             ReqWithCookies);
+          {error, csrf_verification_failed} ->
+            cowboy_req:reply(403,
+                             #{<<"content-type">> => <<"text/plain">>},
+                             <<"Forbidden">>,
+                             ReqWithCookies);
+          {error, Reason} ->
+            folsom_metrics:notify({'broen_core.failure.500', 1}),
+            cowboy_req:reply(500,
+                             #{<<"content-type">> => <<"text/plain">>},
+                             iolist_to_binary([io_lib:format("~p~n", [Reason])]),
+                             ReqWithCookies)
+        end
+    end
+  catch
+    _:Error:Stacktrace ->
+      Now = erlang:timestamp(),
+      Token = base64:encode(crypto:hash(sha256, term_to_binary(Now))),
+      ok = lager:error("Crash: ~p Error: ~p StackTrace: ~p", [Token, Error, Stacktrace]),
+      folsom_metrics:notify({'broen_core.failure.crash', 1}),
+      cowboy_req:reply(500,
                        #{<<"content-type">> => <<"text/plain">>},
-                       <<"Forbidden">>,
-                       Req0);
-    {Origin, OriginMode} ->
-      {AmqpRes, ExtraCookies} = amqp_call(Req0, Exchange, RoutingKey, Timeout),
-      ReqWithCookies = lists:foldl(fun({CookieName, CookieValue}, R) ->
-
-        Value = maps:get(value, CookieValue),
-        MaxAge = maps:get(max_age, CookieValue),
-        Path = maps:get(path, CookieValue, <<"/">>),
-        Domain = maps:get(domain, CookieValue),
-
-        cowboy_req:set_resp_cookie(CookieName, Value, R, #{
-          domain => Domain,
-          path => Path,
-          max_age => MaxAge
-        }) end, Req0, ExtraCookies),
-      case AmqpRes of
-        {ok, PackedResponse, ContentType} ->
-          {ok, SerializerMod} = application:get_env(broen, serializer_mod),
-          case SerializerMod:deserialize(PackedResponse, ContentType) of
-            {ok, Response} ->
-              folsom_metrics:notify({'broen_core.success', 1}),
-              build_response(ReqWithCookies, Response, CookiePath, OriginMode, Origin);
-            {error, invalid_content_type} ->
-              folsom_metrics:notify({'broen_core.failure.500', 1}),
-              cowboy_req:reply(500,
-                               #{<<"content-type">> => <<"text/plain">>},
-                               iolist_to_binary([io_lib:format("Got wrong type of Media Type in response: ~ts",
-                                                               [ContentType])]),
-                               ReqWithCookies)
-          end;
-        {error, timeout} ->
-          {_, MetricTimeout, _} = subsystem_metric(RoutingKey),
-          folsom_metrics:notify({MetricTimeout, 1}),
-          cowboy_req:reply(504,
-                           #{<<"content-type">> => <<"text/plain">>},
-                           <<"API Broen timeout">>,
-                           ReqWithCookies);
-        {error, {reply_code, 312}} ->
-          folsom_metrics:notify({'broen_core.failure.404', 1}),
-          cowboy_req:reply(404,
-                           #{<<"content-type">> => <<"text/plain">>},
-                           <<"Not found">>,
-                           ReqWithCookies);
-        {error, no_route} ->
-          folsom_metrics:notify({'broen_core.failure.503', 1}),
-          cowboy_req:reply(503,
-                           #{<<"content-type">> => <<"text/plain">>},
-                           <<"Service unavailable (no_route)">>,
-                           ReqWithCookies);
-        {error, csrf_verification_failed} ->
-          cowboy_req:reply(403,
-                           #{<<"content-type">> => <<"text/plain">>},
-                           <<"Forbidden">>,
-                           ReqWithCookies);
-        {error, Reason} ->
-          folsom_metrics:notify({'broen_core.failure.500', 1}),
-          cowboy_req:reply(500,
-                           #{<<"content-type">> => <<"text/plain">>},
-                           iolist_to_binary([io_lib:format("~p~n", [Reason])]),
-                           ReqWithCookies)
-      end
+                       iolist_to_binary([io_lib:format("Internal error, broen code crashed ~p~n", [Token])]),
+                       Req0)
   end.
 
 
