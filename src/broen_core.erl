@@ -135,7 +135,6 @@ handle(Req0, Exchange, CookiePath, Options) ->
                        Req0);
     {Origin, OriginMode} ->
       {AmqpRes, ExtraCookies} = amqp_call(Req0, Exchange, RoutingKey, Timeout),
-      io:format("Extra cookies: ~p~n", [ExtraCookies]),
       ReqWithCookies = lists:foldl(fun({CookieName, CookieValue}, R) ->
 
         Value = maps:get(value, CookieValue),
@@ -323,8 +322,8 @@ parse_expiry(Date) ->
   end.
 
 
-parse_date(Date) when is_binary(Date) ->
-  parse_date(binary_to_list(Date));
+parse_date(Date) when is_list(Date) ->
+  parse_date(list_to_binary(Date));
 parse_date(Date) ->
   try
     iso8601:parse(Date)
