@@ -1,7 +1,7 @@
 Broen 🇩🇰🌉🇸🇪
 ==================
 [![Build Status](https://travis-ci.org/issuu/broen.svg?branch=master)](https://travis-ci.org/issuu/broen)
-[![Hex.pm Version](http://img.shields.io/hexpm/v/exgencode.svg?style=flat)](https://hex.pm/packages/broen)
+[![Hex.pm Version](http://img.shields.io/hexpm/v/broen.svg?style=flat)](https://hex.pm/packages/broen)
 
 The HTTP/AMQP bridge library that allows you to change your HTTP requests into AMQP RPC calls.
 
