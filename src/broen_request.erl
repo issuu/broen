@@ -43,8 +43,8 @@ build_request(Req, RoutingKey, AuthData) ->
                    queryobj => maps:from_list(cowboy_req:parse_qs(Req)),
                    auth_data => AuthData}
                ]),
-  maps:map(fun(K, undefined) -> {K, null};
-              (K, V) -> {K, V} end, Request).
+  maps:map(fun(_K, undefined) -> null;
+              (_K, V) -> V end, Request).
 
 get_body(Req) ->
   case cowboy_req:header(<<"content-type">>, Req) of
