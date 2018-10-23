@@ -136,18 +136,7 @@ handle(Req0, Exchange, CookiePath, Options) ->
                          Req0);
       {Origin, OriginMode} ->
         {AmqpRes, ExtraCookies} = amqp_call(Req0, Exchange, RoutingKey, Timeout),
-        ReqWithCookies = lists:foldl(fun({CookieName, CookieValue}, R) ->
-
-          Value = maps:get(value, CookieValue),
-          MaxAge = maps:get(max_age, CookieValue),
-          Path = maps:get(path, CookieValue, <<"/">>),
-          Domain = maps:get(domain, CookieValue),
-
-          cowboy_req:set_resp_cookie(CookieName, Value, R, #{
-            domain => Domain,
-            path => Path,
-            max_age => MaxAge
-          }) end,                    Req0, ExtraCookies),
+        ReqWithCookies = lists:foldl(fun set_extra_cookie/2, Req0, ExtraCookies),
         case AmqpRes of
           {ok, PackedResponse, ContentType} ->
             {ok, SerializerMod} = application:get_env(broen, serializer_mod),
@@ -210,6 +199,18 @@ handle(Req0, Exchange, CookiePath, Options) ->
 
 %% Internal functions
 %% ---------------------------------------------------------------------------------
+set_extra_cookie({CookieName, CookieValue}, R) ->
+  Value = maps:get(value, CookieValue),
+  MaxAge = maps:get(max_age, CookieValue),
+  Path = maps:get(path, CookieValue, <<"/">>),
+  Domain = maps:get(domain, CookieValue),
+
+  cowboy_req:set_resp_cookie(CookieName, Value, R, #{
+    domain => Domain,
+    path => Path,
+    max_age => MaxAge
+  }).
+
 amqp_call(Req, Exchange, RoutingKey, Timeout) ->
   TimeZero = os:timestamp(),
   {ok, AuthMod} = application:get_env(broen, auth_mod),
@@ -246,8 +247,6 @@ handle_http(TimeZero, AuthData, Arg, Exch, RoutingKey, Timeout) ->
   end,
   Reply.
 
-%% @todo consider hardening this a bit and set up a ruleset.
-%% @todo especially protection against malicious use must be handled here.
 routing_key(Req, Options) ->
   Path = cowboy_req:path_info(Req),
   TrailingSlash = binary:last(cowboy_req:path(Req)) == $/,
@@ -255,8 +254,7 @@ routing_key(Req, Options) ->
   case valid_route(Path) of
     false -> <<"route.invalid">>;
     true when TrailingSlash ->
-      Route = route(proplists:get_bool(keep_dots_in_routing_keys, Options), Path),
-      <<Route/binary, ".">>;
+      route(proplists:get_bool(keep_dots_in_routing_keys, Options), [Path | <<>>]);
     true ->
       route(proplists:get_bool(keep_dots_in_routing_keys, Options), Path)
   end.
@@ -310,8 +308,7 @@ cookies(InitialReq, Response, DefaultCookiePath) ->
   Cookies = maps:to_list(maps:get(cookies, Response, #{})),
   CookiePath = maps:get(cookie_path, Response, DefaultCookiePath),
   DefaultExpires = iso8601:format({{2038, 1, 17}, {12, 34, 56}}),
-  lists:foldl(fun(Cookie, Req) -> set_cookie(Cookie, CookiePath, DefaultExpires, Req)
-              end, InitialReq, Cookies).
+  lists:foldl(fun(Cookie, Req) -> set_cookie(Cookie, CookiePath, DefaultExpires, Req) end, InitialReq, Cookies).
 
 set_cookie({CookieName, CookieValue}, DefaultCookiePath, DefaultExpires, Req) ->
   Expiry = parse_expiry(maps:get(expires, CookieValue, DefaultExpires)),
