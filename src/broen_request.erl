@@ -49,7 +49,12 @@ build_request(Req, RoutingKey, AuthData) ->
 
 appmoddata(Req) ->
   [First | Rest] = cowboy_req:path_info(Req),
-  lists:foldl(fun(El, SoFar) -> <<SoFar/binary, "/", El/binary>> end, First, Rest).
+  TrailingSlash = binary:last(cowboy_req:path(Req)) == $/,
+  Data = lists:foldl(fun(El, SoFar) -> <<SoFar/binary, "/", El/binary>> end, First, Rest),
+  case TrailingSlash of
+    true -> <<Data/binary, "/">>;
+    false -> Data
+  end.
 
 
 get_body(Req) ->

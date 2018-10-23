@@ -125,7 +125,7 @@ register_metrics() ->
 
 handle(Req0, Exchange, CookiePath, Options) ->
   try
-    RoutingKey = routing_key(cowboy_req:path_info(Req0), Options),
+    RoutingKey = routing_key(Req0, Options),
     Timeout = proplists:get_value(timeout, Options, ?DEFAULT_TIMEOUT),
     case broen_request:check_http_origin(Req0, RoutingKey) of
       {_, unknown_origin} ->
@@ -248,10 +248,17 @@ handle_http(TimeZero, AuthData, Arg, Exch, RoutingKey, Timeout) ->
 
 %% @todo consider hardening this a bit and set up a ruleset.
 %% @todo especially protection against malicious use must be handled here.
-routing_key(Path, Options) ->
+routing_key(Req, Options) ->
+  Path = cowboy_req:path_info(Req),
+  TrailingSlash = binary:last(cowboy_req:path(Req)) == $/,
+
   case valid_route(Path) of
     false -> <<"route.invalid">>;
-    true -> route(proplists:get_bool(keep_dots_in_routing_keys, Options), Path)
+    true when TrailingSlash ->
+      Route = route(proplists:get_bool(keep_dots_in_routing_keys, Options), Path),
+      <<Route/binary, ".">>;
+    true ->
+      route(proplists:get_bool(keep_dots_in_routing_keys, Options), Path)
   end.
 
 valid_route(Paths) ->
