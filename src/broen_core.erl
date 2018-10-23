@@ -313,7 +313,7 @@ set_cookie({CookieName, CookieValue}, DefaultCookiePath, DefaultExpires, Req) ->
   Secure = maps:get(secure, CookieValue, false),
   HttpOnly = maps:get(http_only, CookieValue, false),
   Value = maps:get(value, CookieValue),
-  cowboy_req:set_resp_cookie(CookieName, cow_qs:urlencode(Value),
+  cowboy_req:set_resp_cookie(CookieName, Value,
                              Req,
                              #{
                                domain => Domain,
