@@ -34,7 +34,7 @@ build_request(Req, RoutingKey, AuthData) ->
                    http_headers => cowboy_req:headers(ReadReq),
                    request => cowboy_req:method(ReadReq),
                    method => cowboy_req:method(ReadReq),
-                   fullpath => iolist_to_binary(cowboy_req:uri(ReadReq)),
+                   fullpath => iolist_to_binary(cowboy_req:uri(ReadReq, #{qs => undefined, fragment => undefined})),
                    appmoddata => cowboy_req:path(ReadReq),
                    referer => cowboy_req:header(<<"referer">>, ReadReq),
                    useragent => cowboy_req:header(<<"user-agent">>, ReadReq),
