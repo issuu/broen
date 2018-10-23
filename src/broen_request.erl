@@ -20,7 +20,6 @@
 -spec build_request(map(), binary(), list(broen_core:broen_other_key())) -> broen_core:broen_request().
 build_request(Req, RoutingKey, AuthData) ->
   {Body, ReadReq} = get_body(Req),
-  io:format("Body: ~p~n", [Body]),
   Request =
     merge_maps([
                  querydata(cowboy_req:qs(ReadReq)),
