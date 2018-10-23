@@ -179,7 +179,8 @@ client_ip(Req) ->
     {undefined, Ip} ->
       Ip;
     {Ip, _} ->
-      Ip
+      [RealIp | _] = binary:split(Ip, <<",">>),
+      RealIp
   end.
 
 match_white_listed_method(RoutingKey, Method) ->
