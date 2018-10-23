@@ -254,7 +254,7 @@ routing_key(Req, Options) ->
   case valid_route(Path) of
     false -> <<"route.invalid">>;
     true when TrailingSlash ->
-      route(proplists:get_bool(keep_dots_in_routing_keys, Options), [Path | <<>>]);
+      route(proplists:get_bool(keep_dots_in_routing_keys, Options), Path ++ [<<>>]);
     true ->
       route(proplists:get_bool(keep_dots_in_routing_keys, Options), Path)
   end.
