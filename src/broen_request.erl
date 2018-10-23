@@ -35,7 +35,7 @@ build_request(Req, RoutingKey, AuthData) ->
                    request => cowboy_req:method(ReadReq),
                    method => cowboy_req:method(ReadReq),
                    fullpath => iolist_to_binary(cowboy_req:uri(ReadReq, #{qs => undefined, fragment => undefined})),
-                   appmoddata => cowboy_req:path(ReadReq),
+                   appmoddata => appmoddata(ReadReq),
                    referer => cowboy_req:header(<<"referer">>, ReadReq),
                    useragent => cowboy_req:header(<<"user-agent">>, ReadReq),
                    client_ip => iolist_to_binary(client_ip(ReadReq)),
@@ -46,6 +46,11 @@ build_request(Req, RoutingKey, AuthData) ->
   maps:map(fun(_K, undefined) -> null;
               (client_data, <<>>) -> null;
               (_K, V) -> V end, Request).
+
+appmoddata(Req) ->
+  [First | Rest] = cowboy_req:path_info(Req),
+  lists:foldl(fun(El, SoFar) -> <<SoFar/binary, "/", El/binary>> end, First, Rest).
+
 
 get_body(Req) ->
   case cowboy_req:header(<<"content-type">>, Req) of
