@@ -5,7 +5,6 @@
 %%% @end
 %%% ---------------------------------------------------------------------------------
 -module(broen_serializer_json).
--include_lib("yaws/include/yaws_api.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %% API

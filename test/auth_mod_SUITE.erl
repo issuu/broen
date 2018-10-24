@@ -4,7 +4,6 @@
 -compile(export_all).
 
 -include_lib("amqp_client/include/amqp_client.hrl").
--include_lib("yaws/include/yaws_api.hrl").
 
 -include_lib("common_test/include/ct.hrl").
 

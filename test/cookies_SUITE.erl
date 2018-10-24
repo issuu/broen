@@ -31,8 +31,9 @@ test_cookies(Config) ->
   {ok, {Resp, Props, Payload}} = httpc:request(get, {Url, []}, [], []),
   {_, 200, _} = Resp,
   "application/json" = proplists:get_value("content-type", Props),
-  "test_cookie=11; Version=1; Domain=mine; Path=/; Expires=Sat, 12 Jan 2030 13:34:56 GMT; Secure" = proplists:get_value("set-cookie", Props),
+  "test_cookie=11; Version=1; Expires=Sat, 12-Jan-2030 13:34:56 GMT; " ++ Rest = proplists:get_value("set-cookie", Props),
 
+  ["Max-Age=" ++ _, " Domain=mine; Path=/; Secure"] = string:split(Rest, ";"),
   #{<<"message">> := <<"Hello!">>} = jsx:decode(list_to_binary(Payload), [return_maps]).
 
 test_other_cookies(Config) ->
@@ -40,7 +41,8 @@ test_other_cookies(Config) ->
   {ok, {Resp, Props, Payload}} = httpc:request(get, {Url, []}, [], []),
   {_, 200, _} = Resp,
   "application/json" = proplists:get_value("content-type", Props),
-  "test_cookie=some value; Version=1; Domain=some-other-domain; Path=/call/routing_test; Expires=Sat, 12 Jan 2030 13:34:56 GMT; HttpOnly" = proplists:get_value("set-cookie", Props),
+  "test_cookie=somevalue; Version=1; Expires=Sat, 12-Jan-2030 13:34:56 GMT; " ++ Rest = proplists:get_value("set-cookie", Props),
+  ["Max-Age=" ++ _," Domain=some-other-domain; Path=/call/routing_test; HttpOnly"] = string:split(Rest, ";"),
 
   #{<<"message">> := <<"Hello!">>} = jsx:decode(list_to_binary(Payload), [return_maps]).
 
@@ -85,7 +87,7 @@ cookies_other(Payload, <<"application/json">>, _Type) ->
   <<"GET">> = maps:get(<<"method">>, Unpacked),
   {reply, jsx:encode(#{
                        media_type => <<"application/json">>,
-                       cookies => #{<<"test_cookie">> => #{value => <<"some value">>,
+                       cookies => #{<<"test_cookie">> => #{value => <<"somevalue">>,
                                                            domain => <<"some-other-domain">>,
                                                            http_only => true,
                                                            expires => "Sat, 12 Jan 2030 13:34:56 GMT"}},
