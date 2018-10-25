@@ -154,7 +154,7 @@ querydata(Data) -> #{querydata => Data}.
 postobj(Req, Body) ->
   case cowboy_req:header(<<"content-type">>, Req) of
     <<"application/x-www-form-urlencoded">> ->
-      #{postobj => cow_qs:parse_qs(Body)};
+      #{postobj => maps:from_list(cow_qs:parse_qs(Body))};
     _ ->
       #{}
   end.

@@ -11,7 +11,7 @@
 
 -export([handle/4]).
 -export([register_metrics/0]).
-
+-export([stringdate_to_datetime/1]).
 -define(CLIENT_REQUEST_BODY_LIMIT, 65536).
 -define(DEFAULT_TIMEOUT, 20). % secs
 -define(ACAO_HEADER, <<"access-control-allow-origin">>).
@@ -386,3 +386,37 @@ histogram_notify(Name, Diff) ->
     Res ->
       Res
   end.
+
+
+month_str_to_int("Jan") -> 1;
+month_str_to_int("Feb") -> 2;
+month_str_to_int("Mar") -> 3;
+month_str_to_int("Apr") -> 4;
+month_str_to_int("May") -> 5;
+month_str_to_int("Jun") -> 6;
+month_str_to_int("Jul") -> 7;
+month_str_to_int("Aug") -> 8;
+month_str_to_int("Sep") -> 9;
+month_str_to_int("Oct") -> 10;
+month_str_to_int("Nov") -> 11;
+month_str_to_int("Dec") -> 12.
+
+
+stringdate_to_datetime([$ |T]) ->
+  stringdate_to_datetime(T);
+stringdate_to_datetime([_D1, _D2, _D3, $\,, $ |Tail]) ->
+  stringdate_to_datetime1(Tail).
+
+stringdate_to_datetime1([A, B, $\s |T]) ->
+  stringdate_to_datetime2(T, erlang:list_to_integer([A,B]));
+stringdate_to_datetime1([A, $\s |T]) ->
+  stringdate_to_datetime2(T, erlang:list_to_integer([A])).
+
+stringdate_to_datetime2([M1, M2, M3, $\s , Y1, Y2, Y3, Y4, $\s,
+                         H1, H2, $:, Min1, Min2,$:,
+                         S1, S2,$\s ,$G, $M, $T|_], Day) ->
+  {{erlang:list_to_integer([Y1,Y2,Y3,Y4]),
+    month_str_to_int([M1, M2, M3]), Day},
+   {erlang:list_to_integer([H1, H2]),
+    erlang:list_to_integer([Min1, Min2]),
+    erlang:list_to_integer([S1, S2])}}.
