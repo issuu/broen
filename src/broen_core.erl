@@ -184,6 +184,12 @@ handle(Req0, Exchange, CookiePath, Options) ->
         end
     end
   catch
+    throw: body_too_large ->
+      cowboy_req:reply(400,
+                       #{<<"content-type">> => <<"text/plain">>},
+                       <<"Body too large">>,
+                       Req0);
+
     _: {request_error, _, _} ->
       ok = lager:warning("Bad request: ~p Error: ~p StackTrace: ~p", [Req0, erlang:get_stacktrace()]),
       cowboy_req:reply(400,

@@ -17,6 +17,7 @@
     ]},
     {mod, {broen_app, []}},
     {env, [
+      {partial_post_size, 41943040},
       {auth_mod, broen_auth_dummy},
       {serializer_mod, broen_serializer_json}
     ]},

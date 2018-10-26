@@ -65,12 +65,20 @@ get_body(Req) ->
   end.
 
 get_body_multipart(Req0, Acc) ->
+  ok = check_multipart_size(Acc),
   case cowboy_req:read_part(Req0) of
     {ok, Headers, Req1} ->
       {ok, Body, Req} = stream_body(Req1, <<>>),
       get_body_multipart(Req, [{Headers, Body} | Acc]);
     {done, Req} ->
       {{[parse_part(P) || P <- lists:reverse(Acc)]}, Req}
+  end.
+
+check_multipart_size(Parts) ->
+  {ok, MaxSize} = application:get_env(broen, partial_post_size),
+  case lists:foldl(fun({_, B}, Acc) -> Acc + byte_size(B) end, 0, Parts) > MaxSize  of
+    true -> throw(body_too_large);
+    false -> ok
   end.
 
 parse_part({#{<<"content-disposition">> := <<"form-data; ", Rest/binary>>} = M, Body}) ->
