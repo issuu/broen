@@ -266,6 +266,8 @@ routing_key(Req, Options) ->
       route(proplists:get_bool(keep_dots_in_routing_keys, Options), Path)
   end.
 
+valid_route([]) ->
+  false;
 valid_route(Paths) ->
   Sum = lists:foldl(fun(El, Sum) -> Sum + byte_size(El) end, 0, Paths),
   Sum =< 255.
