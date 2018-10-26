@@ -15,9 +15,6 @@
 %% Supervisor callbacks
 -export([init/1]).
 
-%% Helper macro for declaring children of supervisor
--define(CHILD(I, Type), {I, {I, start_link, []}, permanent, 5000, Type, [I]}).
-
 %% ===================================================================
 %% API functions
 %% ===================================================================
@@ -44,13 +41,9 @@ init([]) ->
                           arguments = [{<<"alternate-exchange">>, longstr, <<"http_exchange_internal_alt">>}]}
     ]}],
 
-
-  AmqpClient = amqp_director:ad_client_child_spec(amqp_client_endpoint, ConnInfo, [no_ack]),
-
   AMQPRpcClient = amqp_director:ad_client_child_spec(amqp_rpc, ConnInfo, RPCConfig),
 
-
-  {ok, {{one_for_all, 5, 3600}, [AMQPRpcClient, AmqpClient]}}.
+  {ok, {{one_for_one, 5, 3600}, [AMQPRpcClient]}}.
 
 conn_info() ->
   {ok, ConnProps} = application:get_env(broen, amqp_connection),

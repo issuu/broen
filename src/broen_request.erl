@@ -1,6 +1,6 @@
 %%% ---------------------------------------------------------------------------------
 %%% @doc
-%%% This module handles building broen requests out of Yaws data.
+%%% This module handles building broen requests out of Cowboy data.
 %%% @end
 %%% ---------------------------------------------------------------------------------
 -module(broen_request).
@@ -11,11 +11,9 @@
 -export([build_request/3,
          check_http_origin/2]).
 
--define(XFF_HEADER, "X-Forwarded-For").
--define(XRI_HEADER, "X-Real-Ip").
--define(XUA_HEADER, "X-User-Agent").
--define(PROTOCOL_HEADER_NAME, "X-Forwarded-Proto").
--define(CORS_HEADER, "Origin").
+-define(XFF_HEADER, <<"x-forwarded-for">>).
+-define(XRI_HEADER, <<"x-real-ip">>).
+-define(PROTOCOL_HEADER_NAME, <<"x-forwarded-proto">>).
 
 -spec build_request(map(), binary(), list(broen_core:broen_other_key())) -> broen_core:broen_request().
 build_request(Req, RoutingKey, AuthData) ->
@@ -26,7 +24,7 @@ build_request(Req, RoutingKey, AuthData) ->
                  postobj(ReadReq, Body),
                  body(ReadReq, Body),
                  #{
-                   protocol => case cowboy_req:header(<<"x-forwarded-proto">>, ReadReq) of
+                   protocol => case cowboy_req:header(?PROTOCOL_HEADER_NAME, ReadReq) of
                      <<"https">> -> https;
                      _ -> http
                    end,
@@ -112,7 +110,7 @@ get_body(Req0, SoFar) ->
       get_body(Req, <<SoFar/binary, Data/binary>>)
   end.
 
--spec check_http_origin(map(), binary()) -> {undefined | binary(), 'same_origin'|'allow_origin'|'unknown_origin'}.
+-spec check_http_origin(map(), binary()) -> {undefined | binary(), same_origin | allow_origin | unknown_origin}.
 check_http_origin(Req, RoutingKey) ->
   Method = cowboy_req:method(Req),
   Origin = cowboy_req:header(<<"origin">>, Req),
@@ -120,7 +118,7 @@ check_http_origin(Req, RoutingKey) ->
   UserAgent = cowboy_req:header(<<"user-agent">>, Req),
   {Origin, check_http_origin(Method, Origin, RoutingKey, UserAgent, Referer)}.
 
-check_http_origin(_Method, undefined, _RoutingKey, _UserAgent, _Referer)     -> same_origin; % Not cross-origin request
+check_http_origin(_Method, undefined, _RoutingKey, _UserAgent, _Referer)     -> same_origin;  % Not cross-origin request
 check_http_origin(<<"GET">>, _Origin, _RoutingKey, _UserAgent, _Referer)     -> allow_origin; % Disregard GET method
 check_http_origin(<<"OPTIONS">>, _Origin, _RoutingKey, _UserAgent, _Referer) -> allow_origin; % Disregard OPTIONS method
 check_http_origin(Method, Origin, RoutingKey, UserAgent, Referer) ->
@@ -171,8 +169,8 @@ body(Req, Body) ->
 
 
 client_ip(Req) ->
-  case {cowboy_req:header(<<"x-forwarded-for">>, Req),
-        cowboy_req:header(<<"x-real-ip">>, Req)} of
+  case {cowboy_req:header(?XFF_HEADER, Req),
+        cowboy_req:header(?XRI_HEADER, Req)} of
     {undefined, undefined} ->
       {{IP1, IP2, IP3, IP4}, _} = cowboy_req:peer(Req),
       lists:flatten(io_lib:format("~b.~b.~b.~b", [IP1, IP2, IP3, IP4]));
