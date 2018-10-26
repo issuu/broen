@@ -204,7 +204,7 @@ handle(Req0, Exchange, CookiePath, Options) ->
       folsom_metrics:notify({'broen_core.failure.crash', 1}),
       cowboy_req:reply(500,
                        #{<<"content-type">> => <<"text/plain">>},
-                       iolist_to_binary([io_lib:format("Internal error, broen code crashed ~p~n", [Token])]),
+                       iolist_to_binary([io_lib:format("Internal error ~p~n", [Token])]),
                        Req0)
   end.
 
