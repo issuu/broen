@@ -76,7 +76,7 @@ get_body_multipart(Req0, Acc) ->
 
 check_multipart_size(Parts) ->
   {ok, MaxSize} = application:get_env(broen, partial_post_size),
-  case lists:foldl(fun({_, B}, Acc) -> Acc + byte_size(B) end, 0, Parts) > MaxSize  of
+  case lists:foldl(fun({_, B}, Acc) -> Acc + byte_size(B) end, 0, Parts) > MaxSize of
     true -> throw(body_too_large);
     false -> ok
   end.
@@ -118,7 +118,7 @@ get_body(Req0, SoFar) ->
       get_body(Req, <<SoFar/binary, Data/binary>>)
   end.
 
--spec check_http_origin(map(), binary()) -> {undefined | binary(), same_origin | allow_origin | unknown_origin}.
+-spec check_http_origin(map(), binary() | invalid_route) -> {undefined | binary(), same_origin | allow_origin | unknown_origin}.
 check_http_origin(Req, RoutingKey) ->
   Method = cowboy_req:method(Req),
   Origin = cowboy_req:header(<<"origin">>, Req),
@@ -126,6 +126,7 @@ check_http_origin(Req, RoutingKey) ->
   UserAgent = cowboy_req:header(<<"user-agent">>, Req),
   {Origin, check_http_origin(Method, Origin, RoutingKey, UserAgent, Referer)}.
 
+check_http_origin(_Method, _Origin, invalid_route, _UserAgent, _Referer)     -> allow_origin;
 check_http_origin(_Method, undefined, _RoutingKey, _UserAgent, _Referer)     -> same_origin;  % Not cross-origin request
 check_http_origin(<<"GET">>, _Origin, _RoutingKey, _UserAgent, _Referer)     -> allow_origin; % Disregard GET method
 check_http_origin(<<"OPTIONS">>, _Origin, _RoutingKey, _UserAgent, _Referer) -> allow_origin; % Disregard OPTIONS method
