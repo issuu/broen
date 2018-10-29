@@ -211,6 +211,8 @@ handle(Req0, Exchange, CookiePath, Options) ->
 
 %% Internal functions
 %% ---------------------------------------------------------------------------------
+amqp_call(_Req, _Exchange, invalid_route, _Timeout) ->
+  {{error, no_route}, []};
 amqp_call(Req, Exchange, RoutingKey, Timeout) ->
   TimeZero = os:timestamp(),
   {ok, AuthMod} = application:get_env(broen, auth_mod),
@@ -250,7 +252,7 @@ routing_key(Req, Options) ->
   TrailingSlash = binary:last(cowboy_req:path(Req)) == $/,
 
   case valid_route(Path) of
-    false -> <<"route.invalid">>;
+    false -> invalid_route;
     true when TrailingSlash ->
       route(proplists:get_bool(keep_dots_in_routing_keys, Options), Path ++ [<<>>]);
     true ->
