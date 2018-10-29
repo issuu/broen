@@ -191,7 +191,7 @@ handle(Req0, Exchange, CookiePath, Options) ->
                        Req0);
 
     _: {request_error, _, _} ->
-      ok = lager:warning("Bad request: ~p Error: ~p StackTrace: ~p", [Req0, erlang:get_stacktrace()]),
+      lager:warning("Bad request: ~p Error: ~p StackTrace: ~p", [Req0, erlang:get_stacktrace()]),
       cowboy_req:reply(400,
                        #{<<"content-type">> => <<"text/plain">>},
                        <<"Bad request">>,
@@ -200,7 +200,7 @@ handle(Req0, Exchange, CookiePath, Options) ->
     _: Error ->
       Now = erlang:timestamp(),
       Token = base64:encode(crypto:hash(sha256, term_to_binary(Now))),
-      ok = lager:error("Crash: ~p Error: ~p Request ~p StackTrace: ~p", [Token, Error, Req0, erlang:get_stacktrace()]),
+      lager:error("Crash: ~p Error: ~p Request ~p StackTrace: ~p", [Token, Error, Req0, erlang:get_stacktrace()]),
       folsom_metrics:notify({'broen_core.failure.crash', 1}),
       cowboy_req:reply(500,
                        #{<<"content-type">> => <<"text/plain">>},
