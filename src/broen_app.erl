@@ -32,7 +32,7 @@ start_cowboy() ->
                                      {'_', [
                                        {"/call/[...]", broen_mod, []},
                                        {"/res/[...]", broen_mod_res, []},
-                                       {"/multipart/[...]", broen_mod_multipart, []}
+                                       {"/multipart/[...]", broen_mod, []}
                                      ]}
                                    ]),
   InternalDispatch = cowboy_router:compile([

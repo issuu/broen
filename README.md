@@ -192,7 +192,7 @@ The cookies must follow this format:
 
 An authentication module must implement the following function:
 ```erlang
--type cookies() :: [{Name :: binary(), #{value => binary(), max_age => integer(), path => Binary, domain => Binary}}]
+-type cookies() :: [{Name :: binary(), #{value := binary(), max_age => integer(), path => binary(), domain => binary(), secure => boolean(), http_only => boolean()}}]
 -spec authenticate(Req :: map()) -> {ok, Result :: term(), Cookies :: cookies() } | {error, {csrf_verification_failed, cookies()}} | {error, term()}.
 ```
 Where:

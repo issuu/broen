@@ -11,7 +11,6 @@
 
 -export([handle/4]).
 -export([register_metrics/0]).
--export([stringdate_to_datetime/1]).
 -define(CLIENT_REQUEST_BODY_LIMIT, 65536).
 -define(DEFAULT_TIMEOUT, 20). % secs
 -define(ACAO_HEADER, <<"access-control-allow-origin">>).
@@ -117,10 +116,10 @@ register_metrics() ->
             'broen_core.failure.crash',
             'broen_core.failure.500',
             'broen_core.failure.503',
-            'broen_core.failure.404']],
+            'broen_core.failure.404',
+            'broen_auth.failure']],
   [folsom_metrics:new_histogram(H, slide_uniform)
    || H <- ['broen_core.query.unknown.latency']],
-  folsom_metrics:new_spiral('broen_auth.failure'),
   ok.
 
 handle(Req0, Exchange, CookiePath, Options) ->
@@ -136,7 +135,7 @@ handle(Req0, Exchange, CookiePath, Options) ->
                          Req0);
       {Origin, OriginMode} ->
         {AmqpRes, ExtraCookies} = amqp_call(Req0, Exchange, RoutingKey, Timeout),
-        ReqWithCookies = lists:foldl(fun set_extra_cookie/2, Req0, ExtraCookies),
+        ReqWithCookies = lists:foldl(fun(Cookie, Req) -> set_cookie(Cookie, <<"/">>, 0, Req) end, Req0, ExtraCookies),
         case AmqpRes of
           {ok, PackedResponse, ContentType} ->
             {ok, SerializerMod} = application:get_env(broen, serializer_mod),
@@ -185,8 +184,14 @@ handle(Req0, Exchange, CookiePath, Options) ->
         end
     end
   catch
+    throw: body_too_large ->
+      cowboy_req:reply(400,
+                       #{<<"content-type">> => <<"text/plain">>},
+                       <<"Body too large">>,
+                       Req0);
+
     _: {request_error, _, _} ->
-      ok = lager:warning("Bad request: ~p Error: ~p StackTrace: ~p", [Req0, erlang:get_stacktrace()]),
+      lager:warning("Bad request: ~p Error: ~p StackTrace: ~p", [Req0, erlang:get_stacktrace()]),
       cowboy_req:reply(400,
                        #{<<"content-type">> => <<"text/plain">>},
                        <<"Bad request">>,
@@ -195,29 +200,17 @@ handle(Req0, Exchange, CookiePath, Options) ->
     _: Error ->
       Now = erlang:timestamp(),
       Token = base64:encode(crypto:hash(sha256, term_to_binary(Now))),
-      ok = lager:error("Crash: ~p Error: ~p Request ~p StackTrace: ~p", [Token, Error, Req0, erlang:get_stacktrace()]),
+      lager:error("Crash: ~p Error: ~p Request ~p StackTrace: ~p", [Token, Error, Req0, erlang:get_stacktrace()]),
       folsom_metrics:notify({'broen_core.failure.crash', 1}),
       cowboy_req:reply(500,
                        #{<<"content-type">> => <<"text/plain">>},
-                       iolist_to_binary([io_lib:format("Internal error, broen code crashed ~p~n", [Token])]),
+                       iolist_to_binary([io_lib:format("Internal error ~p~n", [Token])]),
                        Req0)
   end.
 
 
 %% Internal functions
 %% ---------------------------------------------------------------------------------
-set_extra_cookie({CookieName, CookieValue}, R) ->
-  Value = maps:get(value, CookieValue),
-  MaxAge = maps:get(max_age, CookieValue),
-  Path = maps:get(path, CookieValue, <<"/">>),
-  Domain = maps:get(domain, CookieValue),
-
-  cowboy_req:set_resp_cookie(CookieName, Value, R, #{
-    domain => Domain,
-    path => Path,
-    max_age => MaxAge
-  }).
-
 amqp_call(Req, Exchange, RoutingKey, Timeout) ->
   TimeZero = os:timestamp(),
   {ok, AuthMod} = application:get_env(broen, auth_mod),
@@ -235,7 +228,6 @@ handle_http(TimeZero, AuthData, Arg, Exch, RoutingKey, Timeout) ->
   Request = broen_request:build_request(Arg, RoutingKey, AuthData),
   {Metric, _, MetricL} = subsystem_metric(RoutingKey),
   folsom_metrics:notify({Metric, 1}),
-  TimeBefore = os:timestamp(),
   {ok, SerializerMod} = application:get_env(broen, serializer_mod),
   {Packed, ContentType} = SerializerMod:serialize(Request),
   Reply = ad_client:call_timeout(amqp_rpc,
@@ -246,7 +238,6 @@ handle_http(TimeZero, AuthData, Arg, Exch, RoutingKey, Timeout) ->
                                  [{timeout, timer:seconds(Timeout)}]),
   TimeAfter = os:timestamp(),
   histogram_notify(MetricL, timer:now_diff(TimeAfter, TimeZero) div 1000),
-  lager:debug("broen_core:amqp_call ~p ~p", [timer:now_diff(TimeBefore, TimeZero), timer:now_diff(TimeAfter, TimeZero)]),
   case Reply of
     {error, timeout} ->
       lager:warning("broen_core:amqp_call timeout ~s ~p", [RoutingKey, Request]);
@@ -336,6 +327,7 @@ set_cookie({CookieName, CookieValue}, DefaultCookiePath, DefaultExpires, Req) ->
                                max_age => Expiry
                              }).
 
+parse_expiry(Date) when is_integer(Date) -> Date;
 parse_expiry(Date) ->
   ParsedDate = parse_date(Date),
   UTC = calendar:universal_time(),
@@ -388,37 +380,3 @@ histogram_notify(Name, Diff) ->
     Res ->
       Res
   end.
-
-
-month_str_to_int("Jan") -> 1;
-month_str_to_int("Feb") -> 2;
-month_str_to_int("Mar") -> 3;
-month_str_to_int("Apr") -> 4;
-month_str_to_int("May") -> 5;
-month_str_to_int("Jun") -> 6;
-month_str_to_int("Jul") -> 7;
-month_str_to_int("Aug") -> 8;
-month_str_to_int("Sep") -> 9;
-month_str_to_int("Oct") -> 10;
-month_str_to_int("Nov") -> 11;
-month_str_to_int("Dec") -> 12.
-
-
-stringdate_to_datetime([$ |T]) ->
-  stringdate_to_datetime(T);
-stringdate_to_datetime([_D1, _D2, _D3, $\,, $ |Tail]) ->
-  stringdate_to_datetime1(Tail).
-
-stringdate_to_datetime1([A, B, $\s |T]) ->
-  stringdate_to_datetime2(T, erlang:list_to_integer([A,B]));
-stringdate_to_datetime1([A, $\s |T]) ->
-  stringdate_to_datetime2(T, erlang:list_to_integer([A])).
-
-stringdate_to_datetime2([M1, M2, M3, $\s , Y1, Y2, Y3, Y4, $\s,
-                         H1, H2, $:, Min1, Min2,$:,
-                         S1, S2,$\s ,$G, $M, $T|_], Day) ->
-  {{erlang:list_to_integer([Y1,Y2,Y3,Y4]),
-    month_str_to_int([M1, M2, M3]), Day},
-   {erlang:list_to_integer([H1, H2]),
-    erlang:list_to_integer([Min1, Min2]),
-    erlang:list_to_integer([S1, S2])}}.

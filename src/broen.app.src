@@ -1,7 +1,7 @@
 {application, broen,
   [
     {description, "broen provides a bridge between HTTP and AMQP"},
-    {vsn, "2.0.3"},
+    {vsn, "2.0.4"},
     {registered, []},
     {applications, [
       kernel,
@@ -17,8 +17,7 @@
     ]},
     {mod, {broen_app, []}},
     {env, [
-      {yaws_flags, 200},
-      {partial_post_size, 40960},
+      {partial_post_size, 41943040},
       {auth_mod, broen_auth_dummy},
       {serializer_mod, broen_serializer_json}
     ]},
