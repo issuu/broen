@@ -40,5 +40,6 @@ start_cowboy() ->
                                                {"/internal_call/[...]", broen_mod_internal, []}
                                              ]}]),
 
-  {ok, _} = cowboy:start_clear(call_handler, [{port, Port}], #{env => #{dispatch => Dispatch}}),
+  {ok, _} = cowboy:start_clear(call_handler, [{port, Port}], #{env => #{dispatch => Dispatch},
+                                                               stream_handlers => [cowboy_compress_h, cowboy_stream_h]}),
   {ok, _} = cowboy:start_clear(internal_handler, [{port, InternalPort}], #{env => #{dispatch => InternalDispatch}}).
