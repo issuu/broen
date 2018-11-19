@@ -32,7 +32,7 @@ init([]) ->
   [{reply_queue,
     iolist_to_binary([<<"replyq-">>,
                       amqp_director:mk_app_id('broen.rpc_client')])},
-   no_ack,
+   {no_ack, true},
    {queue_definitions,
     [
       #'exchange.declare'{exchange = <<"http_exchange">>, type = <<"topic">>},
