@@ -21,6 +21,6 @@ test-eunit:
 	$(REBAR) eunit
 
 test-ct:
-	$(REBAR) ct --sys_config=$(CONFIG_FILE)
+	$(REBAR) ct --readable=false --sys_config=$(CONFIG_FILE)
 dialyzer:
 	$(REBAR) dialyzer
