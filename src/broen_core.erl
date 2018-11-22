@@ -375,6 +375,7 @@ metric_group_key_latency(MetricGroup) -> iolist_to_binary(["broen_core.query.", 
 %% error, as this is most probably a 404 and we don't want
 %% to register random metric groups.
 maybe_register_group({error, {reply_code, 312}}, _) -> ok;
+maybe_register_group({error, no_route}, _) -> ok;
 maybe_register_group(_, MetricGroup) -> register_metric_group(MetricGroup).
 
 register_metric_group(MetricGroup) ->
