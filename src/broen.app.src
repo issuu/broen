@@ -21,7 +21,6 @@
       {auth_mod, broen_auth_dummy},
       {serializer_mod, broen_serializer_json}
     ]},
-    {maintainers, ["Issuu"]},
     {licenses, ["Apache 2.0"]},
     {links, [{"Github", "https://github.com/issuu/broen"}]}
   ]}.
