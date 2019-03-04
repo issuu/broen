@@ -14,6 +14,7 @@
 -define(XFF_HEADER, <<"x-forwarded-for">>).
 -define(XRI_HEADER, <<"x-real-ip">>).
 -define(PROTOCOL_HEADER_NAME, <<"x-forwarded-proto">>).
+-define(PRIVATE_IP_RANGES, [{{10,0,0,0}, 8}, {{172,16,0,0}, 12}, {{192,168,0,0}, 16}, {{127, 0, 0, 1}, 32}]).
 
 -spec build_request(map(), binary(), list(broen_core:broen_other_key())) -> broen_core:broen_request().
 build_request(Req, RoutingKey, AuthData) ->
@@ -186,9 +187,47 @@ client_ip(Req) ->
     {undefined, Ip} ->
       Ip;
     {Ip, _} ->
-      [RealIp | _] = binary:split(Ip, <<",">>),
-      RealIp
+      % get the list of ip address, and return
+      % the latest non-private ip - or a bogus address
+      % if we cannot find one.
+      Ips = lists:reverse(binary:split(Ip, <<",">>)),
+      first_non_private_addr(Ips, <<"0.0.0.0">>)
   end.
+
+first_non_private_addr([], Default) -> Default;
+first_non_private_addr([Ip|Rest], D) ->
+  case is_private(Ip) of
+    false -> Ip;
+    true -> first_non_private_addr(Rest, D)
+  end.
+
+is_private(Ip) when is_binary(Ip) ->
+  case inet:parse_address(binary_to_list(Ip)) of
+    {ok, {_, _, _, _}=Addr} -> is_private(Addr, ?PRIVATE_IP_RANGES);
+    {ok, _IPV6Addr} -> false; % TODO: support ipv6?
+    {error, einval} -> true % skip non valid ips?
+  end.
+
+is_private(_, []) -> false;
+is_private(Ip, [Range|Rest]) ->
+  case ip_between(Ip, Range) of
+    true -> true;
+    false -> is_private(Ip, Rest)
+  end.
+
+ip_num({A, B, C, D}) ->
+  B1 = A bsl 24,
+  B2 = B bsl 16,
+  B3 = C bsl 8,
+  B4 = D,
+  B1 + B2 + B3 + B4.
+
+ip_between(Ip, {Network, NetworkBits}) ->
+  IpNum = ip_num(Ip),
+  NetLow = ip_num(Network),
+  BitsHosts = 32 - NetworkBits,
+  NetHigh = NetLow + erlang:trunc(math:pow(2, BitsHosts)) - 1,
+  IpNum >= NetLow andalso IpNum =< NetHigh.
 
 match_white_listed_method(RoutingKey, Method) ->
   [M || M <- proplists:get_all_values(RoutingKey, application:get_env(broen, cors_white_list, [])),
@@ -233,3 +272,22 @@ cors_bin_test_() ->
     ?assertMatch(unknown_origin, check_http_origin(<<"POST">>, <<"http://www.any-origin.com">>, <<"allowed.route">>, "", "")),
     ?assertMatch(allow_origin, check_http_origin(<<"PUT">>, <<"http://www.any-origin.com">>, <<"allowed.route">>, "", ""))
   end.
+
+private_ip_test() ->
+  ?assertMatch(
+    <<"195.184.103.10">>,
+    first_non_private_addr(
+      [<<"192.168.0.5">>, <<"10.0.123.32">>, <<"195.184.103.10">>, <<"127.0.0.1">>],
+      default_addr)),
+  ?assertMatch(
+    <<"195.184.103.10">>,
+    first_non_private_addr(
+      [<<"192.168.0.5">>, <<"10.0.123.32">>, <<"195.184.103.10">>, <<"195.184.103.11">>, <<"127.0.0.1">>],
+      default_addr)),
+  ?assertMatch(
+    default_addr,
+    first_non_private_addr(
+      [<<"192.168.0.5">>, <<"10.0.123.32">>, <<"127.0.0.1">>],
+      default_addr
+    )
+  ).
