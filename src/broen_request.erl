@@ -186,13 +186,16 @@ client_ip(Req) ->
       lists:flatten(io_lib:format("~b.~b.~b.~b", [IP1, IP2, IP3, IP4]));
     {undefined, Ip} ->
       Ip;
-    {Ip, _} ->
-      % get the list of ip address, and return
-      % the latest non-private ip - or a bogus address
-      % if we cannot find one.
-      Ips = lists:reverse(binary:split(Ip, <<",">>)),
-      first_non_private_addr(Ips, <<"0.0.0.0">>)
+    {Ip, _} -> xff_ip(Ip, <<"0.0.0.0">>)
   end.
+
+xff_ip(IpList, Default) when is_binary(IpList) ->
+  % get the list of ip address, and return
+  % the latest non-private ip - or a bogus address
+  % if we cannot find one.
+  Ips = [binary:replace(Ip, <<" ">>, <<>>, [global]) ||
+         Ip <-  lists:reverse(binary:split(IpList, <<",">>, [trim_all, global]))],
+  first_non_private_addr(Ips, Default).
 
 first_non_private_addr([], Default) -> Default;
 first_non_private_addr([Ip|Rest], D) ->
@@ -274,6 +277,15 @@ cors_bin_test_() ->
   end.
 
 private_ip_test() ->
+  ?assertMatch(
+    <<"195.184.103.10">>,
+    xff_ip(<<"11.12.13.14,172.16.17.18, 195.184.103.10">>, default_addr)
+  ),
+  ?assertMatch(
+    <<"195.184.103.10">>,
+    xff_ip(<<"11.12.13.14  , 172. 16.17.18, , 195.184.103.10 ,  10.0.123.32 ">>, default_addr)
+  ),
+
   ?assertMatch(
     <<"195.184.103.10">>,
     first_non_private_addr(
