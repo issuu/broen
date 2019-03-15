@@ -366,9 +366,9 @@ parse_date(Date) ->
 metric_groups() -> application:get_env(broen, metric_groups, []).
 metric_group_exists(MetricGroup) -> lists:any(fun (Item) -> Item == MetricGroup end, metric_groups()).
 
-metric_group_key_count(MetricGroup) -> iolist_to_binary(["broen_core.query.", MetricGroup]).
-metric_group_key_timeout(MetricGroup) -> iolist_to_binary(["broen_core.query.", MetricGroup, ".timeout"]).
-metric_group_key_latency(MetricGroup) -> iolist_to_binary(["broen_core.query.", MetricGroup, ".latency"]).
+metric_group_key_count(MetricGroup) -> binary_to_atom(iolist_to_binary(["broen_core.query.", MetricGroup]), utf8).
+metric_group_key_timeout(MetricGroup) -> binary_to_atom(iolist_to_binary(["broen_core.query.", MetricGroup, ".timeout"]), utf8).
+metric_group_key_latency(MetricGroup) -> binary_to_atom(iolist_to_binary(["broen_core.query.", MetricGroup, ".latency"]), utf8).
 
 %% register metric group if we did not see it before -
 %% but only if the reply is not "immediate delivery failed"
@@ -386,9 +386,9 @@ register_metric_group(MetricGroup) ->
       Key = metric_group_key_count(MetricGroup),
       KeyT = metric_group_key_timeout(MetricGroup),
       KeyL = metric_group_key_latency(MetricGroup),
-      folsom_metrics:new_spiral(binary_to_atom(Key, utf8)),
-      folsom_metrics:new_spiral(binary_to_atom(KeyT, utf8)),
-      folsom_metrics:new_histogram(binary_to_atom(KeyL, utf8), slide_uniform),
+      folsom_metrics:new_spiral(Key),
+      folsom_metrics:new_spiral(KeyT),
+      folsom_metrics:new_histogram(KeyL, slide_uniform),
       application:set_env(broen, metric_groups, [MetricGroup | metric_groups()]),
       ok
   end.
