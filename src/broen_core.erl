@@ -152,8 +152,6 @@ handle(Req0, Exchange, CookiePath, Options) ->
                                  ReqWithCookies)
             end;
           {error, timeout} ->
-            {_, MetricTimeout, _} = subsystem_metric(RoutingKey),
-            folsom_metrics:notify({MetricTimeout, 1}),
             cowboy_req:reply(504,
                              #{<<"content-type">> => <<"text/plain">>},
                              <<"API Broen timeout">>,
@@ -228,8 +226,8 @@ amqp_call(Req, Exchange, RoutingKey, Timeout) ->
 
 handle_http(TimeZero, AuthData, Arg, Exch, RoutingKey, Timeout) ->
   Request = broen_request:build_request(Arg, RoutingKey, AuthData),
-  {Metric, _, MetricL} = subsystem_metric(RoutingKey),
-  folsom_metrics:notify({Metric, 1}),
+  MetricGroup = metric_group_from_routing_key(RoutingKey),
+  GroupCalledNotified = notify_group_called(MetricGroup),
   {ok, SerializerMod} = application:get_env(broen, serializer_mod),
   {Packed, ContentType} = SerializerMod:serialize(Request),
   Reply = ad_client:call_timeout(amqp_rpc,
@@ -239,10 +237,22 @@ handle_http(TimeZero, AuthData, Arg, Exch, RoutingKey, Timeout) ->
                                  ContentType,
                                  [{timeout, timer:seconds(Timeout)}]),
   TimeAfter = os:timestamp(),
-  histogram_notify(MetricL, timer:now_diff(TimeAfter, TimeZero) div 1000),
+
+  maybe_register_group(Reply, MetricGroup),
+  case GroupCalledNotified of
+    true -> ok;
+    %% if we did not notify before,
+    %% perhaps we now registered the metric,
+    %% so try again
+    false -> notify_group_called(MetricGroup)
+  end,
+
+  notify_group_latency(MetricGroup, TimeZero, TimeAfter),
+
   case Reply of
     {error, timeout} ->
-      lager:warning("broen_core:amqp_call timeout ~s ~p", [RoutingKey, Request]);
+      lager:warning("broen_core:amqp_call timeout ~s ~p", [RoutingKey, Request]),
+      notify_group_timeout(MetricGroup);
     _ -> ok
   end,
   Reply.
@@ -353,25 +363,61 @@ parse_date(Date) ->
 
 %% Other
 %% ---------------------------------------------------------------------------------
-subsystem_metric(RK) when is_binary(RK) ->
+metric_groups() -> application:get_env(broen, metric_groups, []).
+metric_group_exists(MetricGroup) -> lists:any(fun (Item) -> Item == MetricGroup end, metric_groups()).
+
+metric_group_key_count(MetricGroup) -> iolist_to_binary(["broen_core.query.", MetricGroup]).
+metric_group_key_timeout(MetricGroup) -> iolist_to_binary(["broen_core.query.", MetricGroup, ".timeout"]).
+metric_group_key_latency(MetricGroup) -> iolist_to_binary(["broen_core.query.", MetricGroup, ".latency"]).
+
+%% register metric group if we did not see it before -
+%% but only if the reply is not "immediate delivery failed"
+%% error, as this is most probably a 404 and we don't want
+%% to register random metric groups.
+maybe_register_group({error, {reply_code, 312}}, _) -> ok;
+maybe_register_group({error, no_route}, _) -> ok;
+maybe_register_group(_, MetricGroup) -> register_metric_group(MetricGroup).
+
+register_metric_group(MetricGroup) ->
+  case metric_group_exists(MetricGroup) of
+    true -> ok;
+    false ->
+      lager:info("Register metric group: ~s", [MetricGroup]),
+      Key = metric_group_key_count(MetricGroup),
+      KeyT = metric_group_key_timeout(MetricGroup),
+      KeyL = metric_group_key_latency(MetricGroup),
+      folsom_metrics:new_spiral(binary_to_atom(Key, utf8)),
+      folsom_metrics:new_spiral(binary_to_atom(KeyT, utf8)),
+      folsom_metrics:new_histogram(binary_to_atom(KeyL, utf8), slide_uniform),
+      application:set_env(broen, metric_groups, [MetricGroup | metric_groups()]),
+      ok
+  end.
+
+-spec metric_group_from_routing_key(binary()) -> binary().
+metric_group_from_routing_key(RK) when is_binary(RK) ->
   case binary:split(RK, <<".">>) of
-    [SS | _] ->
-      Key = iolist_to_binary(["broen_core.query.", SS]),
-      KeyT = iolist_to_binary(["broen_core.query.", SS, ".timeout"]),
-      KeyL = iolist_to_binary(["broen_core.query.", SS, ".latency"]),
-      try
-        {binary_to_existing_atom(Key, utf8), binary_to_existing_atom(KeyT, utf8), binary_to_existing_atom(KeyL, utf8)}
-      catch
-        error:badarg ->
-          lager:info("subsystem_metric unkown rk ~p ~p ~p", [Key, KeyT, KeyL]),
-          {'broen_core.query.unknown',
-           'broen_core.query.unknown.timeout',
-           'broen_core.query.unknown.latency'}
-      end;
-    _ ->
-      {'broen_core.query.unknown',
-       'broen_core.query.unknown.timeout',
-       'broen_core.query.unknown.latency'}
+    [SS | _] -> SS;
+    _ -> <<"unknown">>
+  end.
+
+  -spec notify_group_called(binary()) -> boolean().
+notify_group_called(MetricGroup) ->
+  case metric_group_exists(MetricGroup) of
+    true -> folsom_metrics:notify({metric_group_key_count(MetricGroup), 1}), true;
+    false -> false
+  end.
+
+notify_group_timeout(MetricGroup) ->
+  case metric_group_exists(MetricGroup) of
+    true -> folsom_metrics:notify({metric_group_key_timeout(MetricGroup), 1});
+    false -> ok
+  end.
+
+notify_group_latency(MetricGroup, TimeZero, TimeAfter) ->
+  case metric_group_exists(MetricGroup) of
+    true -> histogram_notify(metric_group_key_latency(MetricGroup),
+                             timer:now_diff(TimeAfter, TimeZero) div 1000);
+    false -> ok
   end.
 
 histogram_notify(Name, Diff) ->
