@@ -102,9 +102,11 @@ register_metrics() ->
   Groups = application:get_env(broen, metric_groups, []),
   [begin
      Key = iolist_to_binary(["broen_core.query.", G]),
+     KeyA = iolist_to_binary(["broen_core.query.", G, ".gone"]),
      KeyT = iolist_to_binary(["broen_core.query.", G, ".timeout"]),
      KeyL = iolist_to_binary(["broen_core.query.", G, ".latency"]),
      folsom_metrics:new_spiral(binary_to_atom(Key, utf8)),
+     folsom_metrics:new_spiral(binary_to_atom(KeyA, utf8)),
      folsom_metrics:new_spiral(binary_to_atom(KeyT, utf8)),
      folsom_metrics:new_histogram(binary_to_atom(KeyL, utf8), slide_uniform)
    end || G <- Groups],
@@ -253,6 +255,8 @@ handle_http(TimeZero, AuthData, Arg, Exch, RoutingKey, Timeout) ->
     {error, timeout} ->
       lager:warning("broen_core:amqp_call timeout ~s ~p", [RoutingKey, Request]),
       notify_group_timeout(MetricGroup);
+    {error, no_route} ->
+      notify_group_gone(MetricGroup);
     _ -> ok
   end,
   Reply.
@@ -367,6 +371,7 @@ metric_groups() -> application:get_env(broen, metric_groups, []).
 metric_group_exists(MetricGroup) -> lists:any(fun (Item) -> Item == MetricGroup end, metric_groups()).
 
 metric_group_key_count(MetricGroup) -> binary_to_atom(iolist_to_binary(["broen_core.query.", MetricGroup]), utf8).
+metric_group_key_gone(MetricGroup) -> binary_to_atom(iolist_to_binary(["broen_core.query.", MetricGroup, ".gone"]), utf8).
 metric_group_key_timeout(MetricGroup) -> binary_to_atom(iolist_to_binary(["broen_core.query.", MetricGroup, ".timeout"]), utf8).
 metric_group_key_latency(MetricGroup) -> binary_to_atom(iolist_to_binary(["broen_core.query.", MetricGroup, ".latency"]), utf8).
 
@@ -384,9 +389,11 @@ register_metric_group(MetricGroup) ->
     false ->
       lager:info("Register metric group: ~s", [MetricGroup]),
       Key = metric_group_key_count(MetricGroup),
+      KeyA = metric_group_key_gone(MetricGroup),
       KeyT = metric_group_key_timeout(MetricGroup),
       KeyL = metric_group_key_latency(MetricGroup),
       folsom_metrics:new_spiral(Key),
+      folsom_metrics:new_spiral(KeyA),
       folsom_metrics:new_spiral(KeyT),
       folsom_metrics:new_histogram(KeyL, slide_uniform),
       application:set_env(broen, metric_groups, [MetricGroup | metric_groups()]),
@@ -400,11 +407,21 @@ metric_group_from_routing_key(RK) when is_binary(RK) ->
     _ -> <<"unknown">>
   end.
 
-  -spec notify_group_called(binary()) -> boolean().
+ -spec notify_group_called(binary()) -> boolean().
 notify_group_called(MetricGroup) ->
   case metric_group_exists(MetricGroup) of
     true -> folsom_metrics:notify({metric_group_key_count(MetricGroup), 1}), true;
     false -> false
+  end.
+
+notify_group_gone(MetricGroup) ->
+  case metric_group_exists(MetricGroup) of
+    false -> ok;
+    true ->
+      % metric group exists, but message could not be delivered,
+      % meaning that a subsystem is now gone
+      lager:warning("broen_core metric_group_gone ~s", [MetricGroup]),
+      folsom_metrics:notify({metric_group_key_gone(MetricGroup), 1})
   end.
 
 notify_group_timeout(MetricGroup) ->
