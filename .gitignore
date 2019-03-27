@@ -16,3 +16,4 @@ rebar3.crashdump
 .DS_Store
 erl_crash.dump
 dump.rdb
+ebin
