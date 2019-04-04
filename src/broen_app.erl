@@ -26,22 +26,46 @@ stop(_State) ->
 %% Internal functions
 %% ---------------------------------------------------------------------------------
 start_cowboy() ->
-  {ok, Port} = application:get_env(broen, port),
-  {ok, InternalPort} = application:get_env(broen, internalport),
-  Dispatch = cowboy_router:compile([
-                                     {'_', [
-                                       {"/call/[...]", broen_mod, []},
-                                       {"/res/[...]", broen_mod_res, []},
-                                       {"/multipart/[...]", broen_mod, []}
-                                     ]}
-                                   ]),
-  InternalDispatch = cowboy_router:compile([
-                                             {'_', [
-                                               {"/internal_call/[...]", broen_mod_internal, []}
-                                             ]}]),
+  Defaults = application:get_env(broen, defaults, #{}),
+  {ok, Servers} = application:get_env(broen, servers),
+  lists:foreach(fun (Server) -> start_server(Server, Defaults#{keep_dots_in_routing_keys => false}) end, maps:to_list(Servers)).
 
+start_server({ServerName, #{paths := Paths} = Server}, Defaults) ->
+  Port = conf(port, [Server, Defaults]),
+  Routes = make_paths(maps:to_list(Paths), [Server, Defaults]),
+  Dispatch = cowboy_router:compile([{'_', Routes}]),
   {ok, _} = cowboy:start_clear(
-      call_handler,
-      [{num_acceptors, 100}, {max_connections, 10000}, {port, Port}],
-      #{env => #{dispatch => Dispatch}, stream_handlers => [cowboy_compress_h, cowboy_stream_h]}),
-  {ok, _} = cowboy:start_clear(internal_handler, [{port, InternalPort}], #{env => #{dispatch => InternalDispatch}}).
+    ServerName,
+    [{num_acceptors, 100}, {max_connections, 10000}, {port, Port}],
+    #{
+      env => #{dispatch => Dispatch},
+      stream_handlers => [cowboy_compress_h, cowboy_stream_h]}),
+  ok.
+
+make_paths([], _) -> [];
+make_paths([{Path, Conf}|Rest], Defaults) ->
+  [compile_route(Path, [Conf | Defaults]) | make_paths(Rest, Defaults)].
+
+compile_route(Path, Conf) ->
+  HandlerOpts = #{
+    exchange => exchange_name(Conf),
+    serializer_mod => conf(serializer_mod, Conf),
+    auth_mod => conf(auth_mod, Conf),
+    partial_post_size => conf(max_multipart_size, Conf),
+    timeout => conf(timeout, Conf),
+    keep_dots_in_routing_keys => conf(keep_dots_in_routing_keys, Conf)
+  },
+  {iolist_to_binary([Path, <<"/[...]">>]), broen_mod, HandlerOpts}.
+
+exchange_name(Confs) ->
+  case conf(exchange, Confs) of
+    #{name := Exch} -> Exch;
+    Exch -> Exch
+  end.
+
+conf(Key, []) -> throw({configuration_missing, Key});
+conf(Key, [HD|Rest]) ->
+  case maps:is_key(Key, HD) of
+    true -> maps:get(Key, HD);
+    false -> conf(Key, Rest)
+  end.

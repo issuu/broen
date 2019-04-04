@@ -9,10 +9,9 @@
 -module(broen_core).
 
 
--export([handle/4]).
+-export([handle/3]).
 -export([register_metrics/0]).
 -define(CLIENT_REQUEST_BODY_LIMIT, 65536).
--define(DEFAULT_TIMEOUT, 20). % secs
 -define(ACAO_HEADER, <<"access-control-allow-origin">>).
 
 -type content_type() :: unicode:unicode_binary().
@@ -124,10 +123,15 @@ register_metrics() ->
    || H <- ['broen_core.query.unknown.latency']],
   ok.
 
-handle(Req0, Exchange, CookiePath, Options) ->
+handle(
+  Req0,
+  #{
+    serializer_mod := SerializerMod,
+    keep_dots_in_routing_keys := KeepDotsRK
+  } = Conf,
+  CookiePath) ->
   try
-    RoutingKey = routing_key(Req0, Options),
-    Timeout = proplists:get_value(timeout, Options, ?DEFAULT_TIMEOUT),
+    RoutingKey = routing_key(Req0, KeepDotsRK),
     case broen_request:check_http_origin(Req0, RoutingKey) of
       {_, unknown_origin} ->
         folsom_metrics:notify({'broen_core.failure.403', 1}),
@@ -136,11 +140,10 @@ handle(Req0, Exchange, CookiePath, Options) ->
                          <<"Forbidden">>,
                          Req0);
       {Origin, OriginMode} ->
-        {AmqpRes, ExtraCookies} = amqp_call(Req0, Exchange, RoutingKey, Timeout),
+        {AmqpRes, ExtraCookies} = amqp_call(Req0, RoutingKey, Conf),
         ReqWithCookies = lists:foldl(fun(Cookie, Req) -> set_cookie(Cookie, <<"/">>, 0, Req) end, Req0, ExtraCookies),
         case AmqpRes of
           {ok, PackedResponse, ContentType} ->
-            {ok, SerializerMod} = application:get_env(broen, serializer_mod),
             case SerializerMod:deserialize(PackedResponse, ContentType) of
               {ok, Response} ->
                 folsom_metrics:notify({'broen_core.success', 1}),
@@ -190,17 +193,17 @@ handle(Req0, Exchange, CookiePath, Options) ->
                        <<"Body too large">>,
                        Req0);
 
-    _: {request_error, _, _} ->
-      lager:warning("Bad request: ~p Error: ~p StackTrace: ~p", [Req0, erlang:get_stacktrace()]),
+    _: {request_error, _, _}: StackTrace ->
+      lager:warning("Bad request: ~p Error: ~p StackTrace: ~p", [Req0, StackTrace]),
       cowboy_req:reply(400,
                        #{<<"content-type">> => <<"text/plain">>},
                        <<"Bad request">>,
                        Req0);
 
-    _: Error ->
+    _: Error: StackTrace ->
       Now = erlang:timestamp(),
       Token = base64:encode(crypto:hash(sha256, term_to_binary(Now))),
-      lager:error("Crash: ~p Error: ~p Request ~p StackTrace: ~p", [Token, Error, Req0, erlang:get_stacktrace()]),
+      lager:error("Crash: ~p Error: ~p Request ~p StackTrace: ~p", [Token, Error, Req0, StackTrace]),
       folsom_metrics:notify({'broen_core.failure.crash', 1}),
       cowboy_req:reply(500,
                        #{<<"content-type">> => <<"text/plain">>},
@@ -211,26 +214,30 @@ handle(Req0, Exchange, CookiePath, Options) ->
 
 %% Internal functions
 %% ---------------------------------------------------------------------------------
-amqp_call(_Req, _Exchange, invalid_route, _Timeout) ->
+amqp_call(_Req, invalid_route, _Conf) ->
   {{error, no_route}, []};
-amqp_call(Req, Exchange, RoutingKey, Timeout) ->
+amqp_call(Req, RoutingKey, #{
+  exchange := Exchange,
+  serializer_mod := SerializerMod,
+  auth_mod := AuthMod,
+  partial_post_size := PartialPostSize,
+  timeout := Timeout
+}) ->
   TimeZero = os:timestamp(),
-  {ok, AuthMod} = application:get_env(broen, auth_mod),
   case AuthMod:authenticate(Req) of
     {error, csrf_verification_failed} -> {{error, csrf_verification_failed}, []};
     {error, {csrf_verification_failed, Cookies}} ->
       {{error, csrf_verification_failed}, Cookies};
     {error, _} ->
-      {handle_http(TimeZero, [], Req, Exchange, RoutingKey, Timeout), []};
+      {handle_http(SerializerMod, PartialPostSize, TimeZero, [], Req, Exchange, RoutingKey, Timeout), []};
     {ok, AuthData, Cookies} ->
-      {handle_http(TimeZero, AuthData, Req, Exchange, RoutingKey, Timeout), Cookies}
+      {handle_http(SerializerMod, PartialPostSize, TimeZero, AuthData, Req, Exchange, RoutingKey, Timeout), Cookies}
   end.
 
-handle_http(TimeZero, AuthData, Arg, Exch, RoutingKey, Timeout) ->
-  Request = broen_request:build_request(Arg, RoutingKey, AuthData),
+handle_http(SerializerMod, PartialPostSize, TimeZero, AuthData, Arg, Exch, RoutingKey, Timeout) ->
+  Request = broen_request:build_request(Arg, PartialPostSize, RoutingKey, AuthData),
   MetricGroup = metric_group_from_routing_key(RoutingKey),
   GroupCalledNotified = notify_group_called(MetricGroup),
-  {ok, SerializerMod} = application:get_env(broen, serializer_mod),
   {Packed, ContentType} = SerializerMod:serialize(Request),
   Reply = ad_client:call_timeout(amqp_rpc,
                                  Exch,
@@ -261,16 +268,16 @@ handle_http(TimeZero, AuthData, Arg, Exch, RoutingKey, Timeout) ->
   end,
   Reply.
 
-routing_key(Req, Options) ->
+routing_key(Req, KeepDotsRK) ->
   Path = cowboy_req:path_info(Req),
   TrailingSlash = binary:last(cowboy_req:path(Req)) == $/,
 
   case valid_route(Path) of
     false -> invalid_route;
     true when TrailingSlash ->
-      route(proplists:get_bool(keep_dots_in_routing_keys, Options), Path ++ [<<>>]);
+      route(KeepDotsRK, Path ++ [<<>>]);
     true ->
-      route(proplists:get_bool(keep_dots_in_routing_keys, Options), Path)
+      route(KeepDotsRK, Path)
   end.
 
 valid_route([]) ->

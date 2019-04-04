@@ -6,8 +6,8 @@ Broen 🇩🇰🌉🇸🇪
 The HTTP/AMQP bridge library that allows you to change your HTTP requests into AMQP RPC calls.
 
 
-## Broen 2.0
-Broen 2.0 is now `cowboy` based, which also means it is [available on Hex!](https://hex.pm/packages/broen)
+## Broen >= 2.0
+Since 2.0 Broen is `cowboy` based, which also means it is [available on Hex!](https://hex.pm/packages/broen)
 
 
 
@@ -29,16 +29,62 @@ For example, A GET request on `/hello/service/42?foo=bar` is turned into a messa
 * CORS protection
 * Metrics using [folsom](https://hex.pm/packages/folsom)
 
-## Endpoints
-The `broen` server exposes the following endpoints:
+## Endpoints (since v3)
+Since version `3.0.0`, `broen` is configurable. Here is a (not-so-minimal) example:
 
-* `/call` - for any API calls. Any path that follow call will be forwarded to the RabbitMQ `http_exchange` topic exchange. E.g. `/call/hello/service/4` will be turned into `call.hello.service.4`.
-* `/internal_call` - same as above, but allows for separating calls made by internal services that can be handled differently by e.g. HAProxy. These will be forwarded to `http_exchange_internal` exchange.
-* `/multipart` - allows for sending multipart HTTP requests for uploads
+```erlang
+...
+{broen, [
+  % toplevel default configuration
+  {defaults, #{
+    % effectively disable multipart by default
+    max_multipart_size => 0,
+    serializer_mod => broen_serializer_json,
+    % 5s timeout
+    timeout => 5,
+    % where to send broen requests
+    exchange => <<"my_exchange">>
+  }},
+  {servers, #{
+    api_srv => #{
+      auth_mod => user_auth,
+      port => 8080,
+      paths => #{
+        <<"/api">> => #{},
+        <<"/important">> => #{
+          exchange => #{
+            name => <<"another_exch">>,
+            alternate_exchange => <<"another_exch_deadlettering">>},
+          timeout => 10
+        }
+      }
+    },
+    backoffice_srv => #{
+      auth_mod => backoffice_auth,
+      port => 8081,
+      timeout => 30,
+      paths => #{
+        <<"/backoffice">> => #{}
+      }
+    }
+  }}
+]},
+...
+```
 
-The `broen` server has two pluggable modules that allow for further customization:
-* The serialized module, configured with `serializer_mod`, that allows defining of arbitrary serialization protocols, that can be custom to your organisation. The `broen` client services will have to implement the same protocol. `broen` ships with a default JSON serializer.
-* The authentication module, configured with `auth_mod`, that allows for optional authentication of each request. The authentication module will receive the HTTP request coming from the outside and can return arbitrary data that then will be attached to the `broen` request forwarded to AMQP.
+This will configure `broen` to spawn two servers (with default timeout of `5s`, `broen_serializer_json` as serializer and `my_exchange` as exchange):
+- `api_srv` on port `8080`, which uses the `user_auth` module as `auth_mod` which has two paths:
+  * `/api`
+  * `/important`, that overrides the default timeout to `10s` and specifies exchange `another_exch`, configured with dead-lettering
+- `backoffice_srv` on port `8081`, which uses the `backoffice_auth` as `auth_mod` and `30s` timeout and a single path `/backoffice`.
+
+All pieces of configuration (except the server `port`, which is specific to the `servers` map items) can be specified down to the `path` level. The configurations keys are:
+
+- `auth_mod`: the authentication module that allows for optional authentication of each request. The authentication module will receive the HTTP request coming from the outside and can return arbitrary data that then will be attached to the `broen` request forwarded to AMQP.
+- `serializer_mod`: allows defining of arbitrary serialization protocols, that can be custom to your organisation. The `broen` client services will have to implement the same protocol. `broen` ships with a default JSON serializer.
+- `timeout`: requests timeout, in seconds.
+- `exchange`: to which `amqp` exchange to send the requests. Can be just a `binary` or a map `#{name => binary(), alternate_exchange => binary()}`. The `alternate_exchange` will be used to send requests that could not be handled in the primary exchange.
+- `max_multipart_size`: maximum multipart post size (in bytes)
 
 ## Configuration
 The minimal `broen` config should can look like this:
@@ -50,13 +96,22 @@ The minimal `broen` config should can look like this:
             {username, <<"guest">>},
             {password, <<"guest">>}]},
           {listen, {0, 0, 0, 0}},
-          {port, 7083},
-          {internalport, 7084},
-          {cors_white_list, []}
+          {cors_white_list, []},
+          {servers, #{
+            api_srv => #{
+              port => 7083,
+              serializer_mod => broen_serializer_json,
+              auth_mod => broen_auth_dummy,
+              exchange => <<"http_exchange">>,
+              timeout => 5,
+              max_multipart_size => 0,
+              paths => #{ <<"/call">> => #{} }
+            }
+          }}
 ]}
 ```
 
-This defines a connection to a local AMQP broker with default guest/guest login, the IP address of the `broen` server as well as defining `/call` endpoint on port `7083` and `/internal_call` on `7084`.
+This defines a connection to a local AMQP broker with default guest/guest login, the IP address of the `broen` server as well as defining `/call` endpoint on port `7083`.
 
 All configuration parameters are as follow:
 
@@ -69,8 +124,6 @@ All configuration parameters are as follow:
       {password, <<"secretpassword">>}
     ]},
     {listen, {0, 0, 0, 0}},
-    {port, 7083},
-    {internalport, 7084},
     {cors_white_list, [
       {<<"friendly.request">>, <<"POST">>}
     ]},
@@ -78,24 +131,21 @@ All configuration parameters are as follow:
       [<<"mybroen">>, <<"com">>],
       [<<"//mybroen">>, <<"com">>],
     ]},
-    {auth_mod, my_custom_auth},
-    {serializer_mod, my_custom_serializer},
     {metric_groups, [
       "myurl",
       "myotherurl"
-    ]}
+    ]},
+    {defaults, ...},
+    {servers, ...}
   ]}
   ```
   Where:
   * `amqp_connection :: [{host, string()}, {port :: non_neg_integer() | undefined}, {username, binary()}, {password, binary()}]` - The configuration for the connection to the RabbitMQ broker
   * `listen :: inet:ip4_address()` - Defines the IP address the server will listen on
-  * `port :: non_neg_integer()` - Defines the port for the `/call` endpoint
-  * `internalport :: non_neg_integer()` - Defines the port for the `/internal_call` endpoint
   * `cors_white_list :: list({binary(), http_method()})` - Defines routing keys that are exempt from CORS protection. Defined as a list of tuples, where the first element is the routing key (URL) and the second one is the HTTP method. Can be one `<<"POST">>`, `<<"PUT">>`, `<<"DELETE">>` and `<<"PATCH">>` (`<<"GET">>` and `<<"OPTIONS">>` are exempt from CORS protection)
   * `cors_allowed_origins :: list(list(regex()))` - List of all origins for which CORS protection does not apply. The origins must be split by the `.` in the URL so e.g. `mybroen.com` should be defined as `["mybroen", "com"]` and `*.mybroen.com` can be defined as `["//mybroen", "com"]`
-  * `auth_mod :: module()` - Defines the custom authentication module. See the [Authentication section](#authentication)
-  * `serializer_mod :: module()` - Defines the custom serialization module. See the [Serializer section](#serializers)
-  * `metric_groups :: list(string())` - Defines the URLs for which automatic `folsom` metrics wil be taken. Any URL called that matches any of the defined ones will be logged in the metrics. Any not listed will instead be logged as `unknown`. Only the first part of the routing key is needed here.
+  * `metric_groups :: list(string())` - Defines the URLs for which automatic `folsom` metrics wil be taken. Any URL called that matches any of the defined ones will be logged in the metrics. New metrics can also be discovered: if a requests for an unknown group is successfully handled, `broen` will start collecting metrics for that group too. Only the first part of the routing key is needed here.
+  * `defaults` and `servers` have been discussed in the `Endpoint` section.
 
 ## Metrics
 `broen` uses [folsom](https://hex.pm/packages/folsom) to record metrics. For each URL called, that is in the `metric_groups` list `broen` will record the following metrics:
