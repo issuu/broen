@@ -26,17 +26,24 @@ stop(_State) ->
 %% Internal functions
 %% ---------------------------------------------------------------------------------
 start_cowboy() ->
-  Defaults = application:get_env(broen, defaults, #{}),
+  Defaults = maps:merge(
+    #{
+      keep_dots_in_routing_keys => false,
+      num_acceptors => 10,
+      max_connections => 1024},
+    application:get_env(broen, defaults, #{})),
   {ok, Servers} = application:get_env(broen, servers),
-  lists:foreach(fun (Server) -> start_server(Server, Defaults#{keep_dots_in_routing_keys => false}) end, maps:to_list(Servers)).
+  lists:foreach(fun (Server) -> start_server(Server, Defaults) end, maps:to_list(Servers)).
 
 start_server({ServerName, #{paths := Paths} = Server}, Defaults) ->
   Port = conf(port, [Server, Defaults]),
+  NumAcceptors = conf(num_acceptors, [Server, Defaults]),
+  MaxConns = conf(max_connections, [Server, Defaults]),
   Routes = make_paths(maps:to_list(Paths), [Server, Defaults]),
   Dispatch = cowboy_router:compile([{'_', Routes}]),
   {ok, _} = cowboy:start_clear(
     ServerName,
-    [{num_acceptors, 100}, {max_connections, 10000}, {port, Port}],
+    [{num_acceptors, NumAcceptors}, {max_connections, MaxConns}, {port, Port}],
     #{
       env => #{dispatch => Dispatch},
       stream_handlers => [cowboy_compress_h, cowboy_stream_h]}),
