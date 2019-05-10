@@ -150,7 +150,10 @@ check_http_origin(Method, Origin, RoutingKey, UserAgent, Referer) ->
 parse_uri(Origin) when is_binary(Origin) ->
   case http_uri:parse(Origin) of
     {ok, Res} -> binary:split(element(3, Res), <<".">>, [global]);
-    _ -> binary:split(Origin, [<<":">>, <<".">>], [global])
+    Err ->
+        % Origin header is not an uri, do not even try to understand what that is
+        lager:warning("origin header not an uri: ~p", [Err]),
+        []
   end.
 
 
