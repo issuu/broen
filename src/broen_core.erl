@@ -277,7 +277,17 @@ valid_route([]) ->
   false;
 valid_route(Paths) ->
   Sum = lists:foldl(fun(El, Sum) -> Sum + byte_size(El) end, 0, Paths),
-  Sum =< 255.
+  (Sum =< 255) and valid_uri(Paths).
+
+valid_uri(Paths) ->
+  Path = iolist_to_binary(lists:join(<<"/">>, Paths)),
+  case uri_string:normalize(#{path => Path}) of
+      {error, Kind, Cause} ->
+        lager:warning("invalid uri ~p ~p~n", [Kind, Cause]),
+        false;
+      _Normalized ->
+        true
+  end.
 
 %% '.' is converted to '_' iff the keep_dots_in_routing_key is false,
 %% otherwise it is left as a '.'
