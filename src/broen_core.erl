@@ -277,7 +277,32 @@ valid_route([]) ->
   false;
 valid_route(Paths) ->
   Sum = lists:foldl(fun(El, Sum) -> Sum + byte_size(El) end, 0, Paths),
-  Sum =< 255.
+  (Sum =< 255) and valid_uri(Paths).
+
+%% check that all path tokens are printable (filter requests with control
+%% characters) and valid utf8 strings
+valid_uri(Paths) ->
+  Printable = fun (T) ->
+    case io_lib:printable_unicode_list(binary_to_list(T)) of
+      true -> true;
+      false ->
+        lager:warning("Non-printable path segment: ~p", [T]),
+        false
+    end
+  end,
+  ValidUtf8 = fun (T) ->
+    case unicode:characters_to_binary(T, utf8, utf8) of
+      Res when is_binary(Res) -> true;
+      Other ->
+        lager:warning("Invalid path segment encoding: ~p (~p)", [T, Other]),
+        false
+    end
+  end,
+
+  CheckFun = fun (T) ->
+    ValidUtf8(T) and Printable(T)
+  end,
+  lists:all(CheckFun, Paths).
 
 %% '.' is converted to '_' iff the keep_dots_in_routing_key is false,
 %% otherwise it is left as a '.'
