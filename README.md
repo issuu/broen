@@ -5,6 +5,8 @@ Broen 🇩🇰🌉🇸🇪
 
 The HTTP/AMQP bridge library that allows you to change your HTTP requests into AMQP RPC calls.
 
+## Broen >= 3.0
+We dropped support for `erlang 20`. Minimum required version is `21` now.
 
 ## Broen >= 2.0
 Since 2.0 Broen is `cowboy` based, which also means it is [available on Hex!](https://hex.pm/packages/broen)
