@@ -22,7 +22,7 @@
           port => 7083,
           paths => #{
             <<"/api">> => #{
-              echange => <<"broen_exchange">>,
+              exchange => <<"broen_exchange">>,
               max_multipart_size => 0,
               auth_mod => broen_auth_dummy,
               serializer_mod => broen_serializer_json,
