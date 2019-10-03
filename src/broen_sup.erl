@@ -62,7 +62,11 @@ exchange_defs({ok, Servers}, Defaults) ->
   end ++ exchange_defs(maps:values(Servers)) ++ alternate_exchange_defs(maps:values(Servers)).
 
 exchange_defs([]) -> [];
+exchange_defs([#{ exchange := Exch, paths := Paths } | Rest]) ->
+    lists:flatten([exchange_def(Exch), exchange_defs(maps:values(Paths)), exchange_defs(Rest)]);
 exchange_defs([#{ exchange := Exch } | Rest]) -> [exchange_def(Exch) | exchange_defs(Rest)];
+exchange_defs([#{ paths := Paths } | Rest]) ->
+    lists:flatten([exchange_defs(maps:values(Paths)), exchange_defs(Rest)]);
 exchange_defs([_ | Rest]) -> exchange_defs(Rest).
 
 alternate_exchange_defs([]) -> [];
