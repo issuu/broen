@@ -26,7 +26,7 @@
               max_multipart_size => 0,
               auth_mod => broen_auth_dummy,
               serializer_mod => broen_serializer_json,
-              timeout => 10
+              timeout => 10000
             }
           }
         }

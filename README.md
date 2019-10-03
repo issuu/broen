@@ -43,7 +43,7 @@ Since version `3.0.0`, `broen` is configurable. Here is a (not-so-minimal) examp
     max_multipart_size => 0,
     serializer_mod => broen_serializer_json,
     % 5s timeout
-    timeout => 5,
+    timeout => 5000,
     % where to send broen requests
     exchange => <<"my_exchange">>
   }},
@@ -57,14 +57,14 @@ Since version `3.0.0`, `broen` is configurable. Here is a (not-so-minimal) examp
           exchange => #{
             name => <<"another_exch">>,
             alternate_exchange => <<"another_exch_deadlettering">>},
-          timeout => 10
+          timeout => 10000
         }
       }
     },
     backoffice_srv => #{
       auth_mod => backoffice_auth,
       port => 8081,
-      timeout => 30,
+      timeout => 30000,
       paths => #{
         <<"/backoffice">> => #{}
       }
@@ -84,7 +84,7 @@ All pieces of configuration (except the server `port`, which is specific to the 
 
 - `auth_mod`: the authentication module that allows for optional authentication of each request. The authentication module will receive the HTTP request coming from the outside and can return arbitrary data that then will be attached to the `broen` request forwarded to AMQP.
 - `serializer_mod`: allows defining of arbitrary serialization protocols, that can be custom to your organisation. The `broen` client services will have to implement the same protocol. `broen` ships with a default JSON serializer.
-- `timeout`: requests timeout, in seconds.
+- `timeout`: requests timeout, in milliseconds.
 - `exchange`: to which `amqp` exchange to send the requests. Can be just a `binary` or a map `#{name => binary(), alternate_exchange => binary()}`. The `alternate_exchange` will be used to send requests that could not be handled in the primary exchange.
 - `max_multipart_size`: maximum multipart post size (in bytes)
 
@@ -105,7 +105,7 @@ The minimal `broen` config should can look like this:
               serializer_mod => broen_serializer_json,
               auth_mod => broen_auth_dummy,
               exchange => <<"http_exchange">>,
-              timeout => 5,
+              timeout => 5000,
               max_multipart_size => 0,
               paths => #{ <<"/call">> => #{} }
             }

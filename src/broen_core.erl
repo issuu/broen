@@ -244,7 +244,7 @@ handle_http(SerializerMod, PartialPostSize, TimeZero, AuthData, Arg, Exch, Routi
                                  RoutingKey,
                                  Packed,
                                  ContentType,
-                                 [{timeout, timer:seconds(Timeout)}]),
+                                 [{timeout, Timeout}]),
   TimeAfter = os:timestamp(),
 
   maybe_register_group(Reply, MetricGroup),
