@@ -12,8 +12,6 @@ suite() ->
 
 init_per_suite(Config) ->
   {ok, _} = application:ensure_all_started(broen),
-  {ok, OldAuthMod} = application:get_env(broen, auth_mod),
-  application:set_env(broen, auth_mod, ?MODULE),
 
   {ok, ConnProps} = application:get_env(broen, amqp_connection),
   ConnInfo = amqp_director:parse_connection_parameters(ConnProps),
@@ -21,10 +19,8 @@ init_per_suite(Config) ->
   AuthenticatedUrl = start_server(ConnInfo, "auth_test.auth_url", fun auth_req/3),
   HttpsUrl = start_server(ConnInfo, "auth_test.https", fun https_req/3),
   timer:sleep(1000),
-  [{url, AuthenticatedUrl}, {https_url, HttpsUrl}, {old_auth, OldAuthMod} | Config].
-end_per_suite(Config) ->
-  AuthMod = ?config(old_auth, Config),
-  application:set_env(broen, auth_mod, AuthMod),
+  [{url, AuthenticatedUrl}, {https_url, HttpsUrl} | Config].
+end_per_suite(_Config) ->
   ok.
 
 all() ->
@@ -48,7 +44,7 @@ start_server(ConnInfo, RoutingKey, Handler) ->
   {ok, Hostname} = inet:gethostname(),
   UrlBit = lists:flatten(string:replace(RoutingKey, ".", "/", all)),
   QueueName = iolist_to_binary([RoutingKey, "-", Hostname]),
-  WorkingUrl = "http://localhost:7083/call/" ++ UrlBit,
+  WorkingUrl = "http://localhost:7083/call_auth/" ++ UrlBit,
 
   AmqpConfig = [{exchange, <<"http_exchange">>},
                 {consume_queue, QueueName},

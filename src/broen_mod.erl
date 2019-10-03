@@ -18,5 +18,5 @@ default_cookie_path(ServerPath) ->
   end.
 
 init(Req0, State) ->
-  Ret = broen_core:handle(Req0, <<"http_exchange">>, default_cookie_path(cowboy_req:path(Req0)), []),
+  Ret = broen_core:handle(Req0, State, default_cookie_path(cowboy_req:path(Req0))),
   {ok, Ret, State}.

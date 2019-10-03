@@ -8,7 +8,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% API
--export([build_request/3,
+-export([build_request/4,
          check_http_origin/2]).
 
 -define(XFF_HEADER, <<"x-forwarded-for">>).
@@ -16,9 +16,9 @@
 -define(PROTOCOL_HEADER_NAME, <<"x-forwarded-proto">>).
 -define(PRIVATE_IP_RANGES, [{{10,0,0,0}, 8}, {{172,16,0,0}, 12}, {{192,168,0,0}, 16}, {{127, 0, 0, 1}, 32}]).
 
--spec build_request(map(), binary(), list(broen_core:broen_other_key())) -> broen_core:broen_request().
-build_request(Req, RoutingKey, AuthData) ->
-  {Body, ReadReq} = get_body(Req),
+-spec build_request(map(), integer(), binary(), list(broen_core:broen_other_key())) -> broen_core:broen_request().
+build_request(Req, BodyMaxSize, RoutingKey, AuthData) ->
+  {Body, ReadReq} = get_body(Req, BodyMaxSize),
   Request =
     merge_maps([
                  querydata(cowboy_req:qs(ReadReq)),
@@ -56,27 +56,26 @@ appmoddata(Req) ->
   end.
 
 
-get_body(Req) ->
+get_body(Req, MaxSize) ->
   case cowboy_req:header(<<"content-type">>, Req) of
     <<"multipart/form-data", _/binary>> ->
-      B = get_body_multipart(Req, []),
+      B = get_body_multipart(Req, MaxSize, []),
       B;
     _ ->
-      get_body(Req, <<>>)
+      get_body_(Req, <<>>)
   end.
 
-get_body_multipart(Req0, Acc) ->
-  ok = check_multipart_size(Acc),
+get_body_multipart(Req0, MaxSize, Acc) ->
+  ok = check_multipart_size(Acc, MaxSize),
   case cowboy_req:read_part(Req0) of
     {ok, Headers, Req1} ->
       {ok, Body, Req} = stream_body(Req1, <<>>),
-      get_body_multipart(Req, [{Headers, Body} | Acc]);
+      get_body_multipart(Req, MaxSize, [{Headers, Body} | Acc]);
     {done, Req} ->
       {{[parse_part(P) || P <- lists:reverse(Acc)]}, Req}
   end.
 
-check_multipart_size(Parts) ->
-  {ok, MaxSize} = application:get_env(broen, partial_post_size),
+check_multipart_size(Parts, MaxSize) ->
   case lists:foldl(fun({_, B}, Acc) -> Acc + byte_size(B) end, 0, Parts) > MaxSize of
     true -> throw(body_too_large);
     false -> ok
@@ -111,12 +110,12 @@ stream_body(Req0, Acc) ->
       {ok, <<Acc/binary, Data/binary>>, Req}
   end.
 
-get_body(Req0, SoFar) ->
+get_body_(Req0, SoFar) ->
   case cowboy_req:read_body(Req0) of
     {ok, Data, Req} ->
       {<<SoFar/binary, Data/binary>>, Req};
     {more, Data, Req} ->
-      get_body(Req, <<SoFar/binary, Data/binary>>)
+      get_body_(Req, <<SoFar/binary, Data/binary>>)
   end.
 
 -spec check_http_origin(map(), binary() | invalid_route) -> {undefined | binary(), same_origin | allow_origin | unknown_origin}.
