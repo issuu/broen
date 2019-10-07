@@ -193,8 +193,8 @@ handle(
                        <<"Body too large">>,
                        Req0);
 
-    _: {request_error, _, _}: StackTrace ->
-      lager:warning("Bad request: ~p Error: ~p StackTrace: ~p", [Req0, StackTrace]),
+    _: {request_error, _, _} = Error: StackTrace ->
+      lager:warning("Bad request: ~p Error: ~p StackTrace: ~p", [Req0, Error, StackTrace]),
       cowboy_req:reply(400,
                        #{<<"content-type">> => <<"text/plain">>},
                        <<"Bad request">>,
