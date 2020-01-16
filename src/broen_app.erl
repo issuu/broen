@@ -41,12 +41,14 @@ start_server({ServerName, #{paths := Paths} = Server}, Defaults) ->
   MaxConns = conf(max_connections, [Server, Defaults]),
   Routes = make_paths(maps:to_list(Paths), [Server, Defaults]),
   Dispatch = cowboy_router:compile([{'_', Routes}]),
+  CowboyOpts = maps:merge(#{
+    env => #{dispatch => Dispatch},
+    stream_handlers => [cowboy_compress_h, cowboy_stream_h]
+  }, conf_default(cowboy_opts, [Server, Defaults], #{})),
   {ok, _} = cowboy:start_clear(
     ServerName,
     [{num_acceptors, NumAcceptors}, {max_connections, MaxConns}, {port, Port}],
-    #{
-      env => #{dispatch => Dispatch},
-      stream_handlers => [cowboy_compress_h, cowboy_stream_h]}),
+    CowboyOpts),
   ok.
 
 make_paths([], _) -> [];
@@ -70,9 +72,15 @@ exchange_name(Confs) ->
     Exch -> Exch
   end.
 
-conf(Key, []) -> throw({configuration_missing, Key});
-conf(Key, [HD|Rest]) ->
+conf(Key, Envs) ->
+  case conf_default(Key, Envs, not_found) of
+    not_found -> throw({configuration_missing, Key});
+    Res -> Res
+  end.
+
+conf_default(_, [], Default) -> Default;
+conf_default(Key, [HD|Rest], Default) ->
   case maps:is_key(Key, HD) of
     true -> maps:get(Key, HD);
-    false -> conf(Key, Rest)
+    false -> conf_default(Key, Rest, Default)
   end.

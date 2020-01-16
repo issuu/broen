@@ -24,3 +24,6 @@ test-ct:
 	$(REBAR) ct --readable=false --sys_config=$(CONFIG_FILE)
 dialyzer:
 	$(REBAR) dialyzer
+
+publish:
+	$(REBAR) hex publish
