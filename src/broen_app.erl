@@ -21,6 +21,8 @@ start(_StartType, _StartArgs) ->
 
 
 stop(_State) ->
+  Listeners = application:get_env(broen, runtime_listeners, []),
+  lists:foreach(fun (Pid) -> cowboy:stop_listener(Pid) end, Listeners),
   ok.
 
 %% Internal functions
@@ -33,7 +35,11 @@ start_cowboy() ->
       max_connections => 1024},
     application:get_env(broen, defaults, #{})),
   {ok, Servers} = application:get_env(broen, servers),
-  lists:foreach(fun (Server) -> start_server(Server, Defaults) end, maps:to_list(Servers)).
+  Listeners = [
+    start_server(Server, Defaults)
+    || Server <- maps:to_list(Servers)
+  ],
+  application:set_env(broen, runtime_listeners, Listeners).
 
 start_server({ServerName, #{paths := Paths} = Server}, Defaults) ->
   Port = conf(port, [Server, Defaults]),
@@ -45,11 +51,11 @@ start_server({ServerName, #{paths := Paths} = Server}, Defaults) ->
     env => #{dispatch => Dispatch},
     stream_handlers => [cowboy_compress_h, cowboy_stream_h]
   }, conf_default(cowboy_opts, [Server, Defaults], #{})),
-  {ok, _} = cowboy:start_clear(
+  {ok, _ListenerPid} = cowboy:start_clear(
     ServerName,
     [{num_acceptors, NumAcceptors}, {max_connections, MaxConns}, {port, Port}],
     CowboyOpts),
-  ok.
+  ServerName.
 
 make_paths([], _) -> [];
 make_paths([{Path, Conf}|Rest], Defaults) ->
