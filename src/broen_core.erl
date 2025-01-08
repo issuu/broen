@@ -155,6 +155,12 @@ register_prometheus_metrics(Prefix) ->
 
   %% reset the unknown counter(s) on each startup
   [prometheus_counter:inc(M, [EndPoint], 0) || M <- [Q, QG, QT], EndPoint <- ['unknown']],
+
+  %% This metric is exposed and used by whatever authentication module that using "broen" library.
+  AF = binary_to_atom(iolist_to_binary([Prefix, "_broen_auth_failure_total"]),utf8),
+  prometheus_counter:declare([{name, AF}, {labels, [failure_type]}, {help, "Count auth failure requests."}]),
+  [prometheus_counter:inc(AF, [FailureType], 0) || FailureType <- ['400','403','404','413','415','500','502','503','504',crash,csrf]],
+
   ok.
 
 prometheus_inc_counter(Suffix, Inc) ->
