@@ -1,0 +1,19 @@
+services:
+  broen-dev:
+    image: broen/dev
+    build:
+      dockerfile: ./Dockerfile.dev
+      context: .
+    command: sleep infinity
+    volumes:
+      - ..:/app
+    depends_on:
+      rabbitmq:
+        condition: service_started
+    network_mode: host
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    network_mode: host
+    expose:
+      - "5672"
+      - "15672"
