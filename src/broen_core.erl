@@ -150,7 +150,7 @@ register_prometheus_metrics(Prefix) ->
   prometheus_counter:declare([{name, Q}, {labels, [endpoint]}, {help, "Count query requests."}]),
   QG = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_gone_total"]),utf8),
   prometheus_counter:declare([{name, QG}, {labels, [endpoint]}, {help, "Count query gone requests."}]),
-  QT = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_timeout"]),utf8),
+  QT = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_timeout_total"]),utf8),
   prometheus_counter:declare([{name, QT}, {labels, [endpoint]}, {help, "Count query timeout requests."}]),
 
   %% reset the unknown counter(s) on each startup
