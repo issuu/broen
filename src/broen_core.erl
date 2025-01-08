@@ -147,11 +147,11 @@ register_prometheus_metrics(Prefix) ->
   QH = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query"]),utf8),
   prometheus_histogram:declare([{name, QH}, {labels, [endpoint]}, {help, "Query request time in milliseconds."}]),
   Q = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_total"]),utf8),
-  prometheus_counter:declare([{name, Q}, {labels, [endpoint]}, {help, "Count query requests."}]),
+  prometheus_counter:declare([{name, Q}, {labels, [endpoint]}, {help, "Count query endpoint requests."}]),
   QG = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_gone_total"]),utf8),
-  prometheus_counter:declare([{name, QG}, {labels, [endpoint]}, {help, "Count query gone requests."}]),
+  prometheus_counter:declare([{name, QG}, {labels, [endpoint]}, {help, "Count query endpoint gone requests."}]),
   QT = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_timeout_total"]),utf8),
-  prometheus_counter:declare([{name, QT}, {labels, [endpoint]}, {help, "Count query timeout requests."}]),
+  prometheus_counter:declare([{name, QT}, {labels, [endpoint]}, {help, "Count query endpoint timeout requests."}]),
 
   %% reset the unknown counter(s) on each startup
   [prometheus_counter:inc(M, [EndPoint], 0) || M <- [Q, QG, QT], EndPoint <- ['unknown']],
@@ -487,7 +487,11 @@ register_prometheus_metric_group(Prefix, MetricGroup) ->
   %% reset counter
   lager:info("Register prometheus metric group: ~s", [MetricGroup]),
   Q = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_total"]),utf8),
-  prometheus_counter:inc(Q, [MetricGroup], 0).
+  QG = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_gone_total"]),utf8),
+  QT = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_timeout_total"]),utf8),
+  prometheus_counter:inc(Q, [MetricGroup], 0),
+  prometheus_counter:inc(QG, [MetricGroup], 0),
+  prometheus_counter:inc(QT, [MetricGroup], 0).
 
 -spec metric_group_from_routing_key(binary()) -> binary().
 metric_group_from_routing_key(RK) when is_binary(RK) ->
