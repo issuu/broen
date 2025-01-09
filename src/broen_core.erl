@@ -489,9 +489,9 @@ register_prometheus_metric_group(Prefix, MetricGroup) ->
   Q = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_total"]),utf8),
   QG = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_gone_total"]),utf8),
   QT = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_timeout_total"]),utf8),
-  prometheus_counter:inc(Q, [MetricGroup], 0),
-  prometheus_counter:inc(QG, [MetricGroup], 0),
-  prometheus_counter:inc(QT, [MetricGroup], 0).
+  prometheus_counter:inc(Q, [binary_to_atom(MetricGroup,utf8)], 0),
+  prometheus_counter:inc(QG, [binary_to_atom(MetricGroup,utf8)], 0),
+  prometheus_counter:inc(QT, [binary_to_atom(MetricGroup,utf8)], 0).
 
 -spec metric_group_from_routing_key(binary()) -> binary().
 metric_group_from_routing_key(RK) when is_binary(RK) ->
