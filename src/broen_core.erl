@@ -145,7 +145,13 @@ register_prometheus_metrics(Prefix) ->
   [prometheus_counter:inc(F, [FailureType], 0) || FailureType <- ['400','403','404','413','415','500','502','503','504',crash,csrf]],
 
   QH = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query"]),utf8),
-  prometheus_histogram:declare([{name, QH}, {labels, [route]}, {help, "Query request time in milliseconds."}]),
+  prometheus_histogram:declare([
+    {name, QH},
+    {labels, [route]},
+    %% Note that there is an extra implicit bucket from 60 sec to infinity.
+    {buckets, [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000]},
+    {help, "Query request time in milliseconds."}
+  ]),
   Q = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_total"]),utf8),
   prometheus_counter:declare([{name, Q}, {labels, [route]}, {help, "Count query route requests."}]),
   QG = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_gone_total"]),utf8),
