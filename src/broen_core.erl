@@ -145,13 +145,13 @@ register_prometheus_metrics(Prefix) ->
   [prometheus_counter:inc(F, [FailureType], 0) || FailureType <- ['400','403','404','413','415','500','502','503','504',crash,csrf]],
 
   QH = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query"]),utf8),
-  prometheus_histogram:declare([{name, QH}, {labels, [endpoint]}, {help, "Query request time in milliseconds."}]),
+  prometheus_histogram:declare([{name, QH}, {labels, [route]}, {help, "Query request time in milliseconds."}]),
   Q = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_total"]),utf8),
-  prometheus_counter:declare([{name, Q}, {labels, [endpoint]}, {help, "Count query endpoint requests."}]),
+  prometheus_counter:declare([{name, Q}, {labels, [route]}, {help, "Count query route requests."}]),
   QG = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_gone_total"]),utf8),
-  prometheus_counter:declare([{name, QG}, {labels, [endpoint]}, {help, "Count query endpoint gone requests."}]),
+  prometheus_counter:declare([{name, QG}, {labels, [route]}, {help, "Count query route gone requests."}]),
   QT = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_timeout_total"]),utf8),
-  prometheus_counter:declare([{name, QT}, {labels, [endpoint]}, {help, "Count query endpoint timeout requests."}]),
+  prometheus_counter:declare([{name, QT}, {labels, [route]}, {help, "Count query route timeout requests."}]),
 
   %% reset the unknown counter(s) on each startup
   [prometheus_counter:inc(M, [EndPoint], 0) || M <- [Q, QG, QT], EndPoint <- ['unknown']],
