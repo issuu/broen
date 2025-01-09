@@ -5,6 +5,9 @@ Broen 🇩🇰🌉🇸🇪
 
 The HTTP/AMQP bridge library that allows you to change your HTTP requests into AMQP RPC calls.
 
+## Broen >= 3.1
+Added support for prometheus metrics, see test/sys.config. Only iff app env `broen.prometheus.prefix` have been defined.
+
 ## Broen >= 3.0
 We dropped support for `erlang 20`. Minimum required version is `21` now.
 

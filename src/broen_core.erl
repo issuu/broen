@@ -99,6 +99,7 @@ headers => broen_object()}
 -spec register_metrics() -> ok.
 register_metrics() ->
   Groups = application:get_env(broen, metric_groups, []),
+  lager:info("Register folsom metrics with query paths: ~s", [Groups]),
   [begin
      Key = iolist_to_binary(["broen_core.query.", G]),
      KeyA = iolist_to_binary(["broen_core.query.", G, ".gone"]),
@@ -121,7 +122,58 @@ register_metrics() ->
             'broen_auth.failure']],
   [folsom_metrics:new_histogram(H, slide_uniform)
    || H <- ['broen_core.query.unknown.latency']],
+
+  register_prometheus_metrics(),
   ok.
+
+register_prometheus_metrics() ->
+  case application:get_env(broen, prometheus) of
+    {ok, #{ prefix := Prefix }} ->
+        register_prometheus_metrics(Prefix);
+    undefined ->
+        ok
+  end.
+
+register_prometheus_metrics(Prefix) ->
+  lager:info("Register prometheus metrics using prefix: ~s", [Prefix]),
+  S = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_success_total"]),utf8),
+  prometheus_counter:declare([{name, S}, {help, "Count success requests."}]),
+  prometheus_counter:inc(S, 0),
+
+  F = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_failure_total"]),utf8),
+  prometheus_counter:declare([{name, F}, {labels, [failure_type]}, {help, "Count failure requests."}]),
+  [prometheus_counter:inc(F, [FailureType], 0) || FailureType <- ['400','403','404','413','415','500','502','503','504',crash,csrf]],
+
+  QH = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query"]),utf8),
+  prometheus_histogram:declare([{name, QH}, {labels, [endpoint]}, {help, "Query request time in milliseconds."}]),
+  Q = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_total"]),utf8),
+  prometheus_counter:declare([{name, Q}, {labels, [endpoint]}, {help, "Count query endpoint requests."}]),
+  QG = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_gone_total"]),utf8),
+  prometheus_counter:declare([{name, QG}, {labels, [endpoint]}, {help, "Count query endpoint gone requests."}]),
+  QT = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_timeout_total"]),utf8),
+  prometheus_counter:declare([{name, QT}, {labels, [endpoint]}, {help, "Count query endpoint timeout requests."}]),
+
+  %% reset the unknown counter(s) on each startup
+  [prometheus_counter:inc(M, [EndPoint], 0) || M <- [Q, QG, QT], EndPoint <- ['unknown']],
+
+  %% This metric is exposed and used by whatever authentication module that using "broen" library.
+  AF = binary_to_atom(iolist_to_binary([Prefix, "_broen_auth_failure_total"]),utf8),
+  prometheus_counter:declare([{name, AF}, {labels, [failure_type]}, {help, "Count auth failure requests."}]),
+  [prometheus_counter:inc(AF, [FailureType], 0) || FailureType <- ['400','403','404','413','415','500','502','503','504',crash,csrf]],
+
+  ok.
+
+prometheus_inc_counter(Suffix, Inc) ->
+  prometheus_inc_counter(Suffix, [], Inc).
+prometheus_inc_counter(Suffix, Labels, Inc) ->
+  case application:get_env(broen, prometheus) of
+    {ok, #{ prefix := Prefix }} ->
+        MetricName = binary_to_atom(iolist_to_binary([Prefix, "_", atom_to_list(Suffix), "_total"]),utf8),
+        %%lager:debug("increasing prometheus metric counter ~p, labels ~p with ~p", [MetricName, Labels, Inc]),
+        prometheus_counter:inc(MetricName, Labels, Inc);
+    undefined ->
+        ok
+  end.
 
 handle(
   Req0,
@@ -135,6 +187,7 @@ handle(
     case broen_request:check_http_origin(Req0, RoutingKey) of
       {_, unknown_origin} ->
         folsom_metrics:notify({'broen_core.failure.403', 1}),
+        prometheus_inc_counter('broen_core_failure', ['403'], 1),
         cowboy_req:reply(403,
                          #{<<"content-type">> => <<"text/plain">>},
                          <<"Forbidden">>,
@@ -147,9 +200,12 @@ handle(
             case SerializerMod:deserialize(PackedResponse, ContentType) of
               {ok, Response} ->
                 folsom_metrics:notify({'broen_core.success', 1}),
+                prometheus_inc_counter('broen_core_success', 1),
                 build_response(ReqWithCookies, Response, CookiePath, OriginMode, Origin);
               {error, invalid_content_type} ->
                 folsom_metrics:notify({'broen_core.failure.500', 1}),
+                %% 415 Unsupported Media Type - seems more correct meassure
+                prometheus_inc_counter('broen_core_failure', ['415'], 1),
                 cowboy_req:reply(500,
                                  #{<<"content-type">> => <<"text/plain">>},
                                  iolist_to_binary([io_lib:format("Got wrong type of Media Type in response: ~ts",
@@ -157,29 +213,37 @@ handle(
                                  ReqWithCookies)
             end;
           {error, timeout} ->
+            %% 504 Gateway Timeout
+            prometheus_inc_counter('broen_core_failure', ['504'], 1),
             cowboy_req:reply(504,
                              #{<<"content-type">> => <<"text/plain">>},
                              <<"API Broen timeout">>,
                              ReqWithCookies);
           {error, {reply_code, 312}} ->
             folsom_metrics:notify({'broen_core.failure.404', 1}),
+            prometheus_inc_counter('broen_core_failure', ['404'], 1),
             cowboy_req:reply(404,
                              #{<<"content-type">> => <<"text/plain">>},
                              <<"Not found">>,
                              ReqWithCookies);
           {error, no_route} ->
+            %% 503 Service Unavailable
             folsom_metrics:notify({'broen_core.failure.503', 1}),
+            prometheus_inc_counter('broen_core_failure', ['503'], 1),
             cowboy_req:reply(503,
                              #{<<"content-type">> => <<"text/plain">>},
                              <<"Service unavailable (no_route)">>,
                              ReqWithCookies);
           {error, csrf_verification_failed} ->
+            prometheus_inc_counter('broen_core_failure', ['csrf'], 1),
             cowboy_req:reply(403,
                              #{<<"content-type">> => <<"text/plain">>},
                              <<"Forbidden">>,
                              ReqWithCookies);
           {error, Reason} ->
+            %% 500 Internal Server Error
             folsom_metrics:notify({'broen_core.failure.500', 1}),
+            prometheus_inc_counter('broen_core_failure', ['500'], 1),
             cowboy_req:reply(500,
                              #{<<"content-type">> => <<"text/plain">>},
                              iolist_to_binary([io_lib:format("~p~n", [Reason])]),
@@ -188,12 +252,15 @@ handle(
     end
   catch
     throw: body_too_large ->
+      %% 413 Payload Too Large
+      prometheus_inc_counter('broen_core_failure', ['413'], 1),
       cowboy_req:reply(400,
                        #{<<"content-type">> => <<"text/plain">>},
                        <<"Body too large">>,
                        Req0);
 
     _: {request_error, _, _} = Error: StackTrace ->
+      prometheus_inc_counter('broen_core_failure', ['400'], 1),
       lager:warning("Bad request: ~p Error: ~p StackTrace: ~p", [Req0, Error, StackTrace]),
       cowboy_req:reply(400,
                        #{<<"content-type">> => <<"text/plain">>},
@@ -205,6 +272,7 @@ handle(
       Token = base64:encode(crypto:hash(sha256, term_to_binary(Now))),
       lager:error("Crash: ~p Error: ~p Request ~p StackTrace: ~p", [Token, Error, Req0, StackTrace]),
       folsom_metrics:notify({'broen_core.failure.crash', 1}),
+      prometheus_inc_counter('broen_core_failure', ['crash'], 1),
       cowboy_req:reply(500,
                        #{<<"content-type">> => <<"text/plain">>},
                        iolist_to_binary([io_lib:format("Internal error ~p~n", [Token])]),
@@ -403,9 +471,27 @@ register_metric_group(MetricGroup) ->
       folsom_metrics:new_spiral(KeyA),
       folsom_metrics:new_spiral(KeyT),
       folsom_metrics:new_histogram(KeyL, slide_uniform),
+      register_prometheus_metric_group(MetricGroup),
       application:set_env(broen, metric_groups, [MetricGroup | metric_groups()]),
       ok
   end.
+
+register_prometheus_metric_group(MetricGroup) ->
+  case application:get_env(broen, prometheus) of
+    {ok, #{ prefix := Prefix }} ->
+        register_prometheus_metric_group(Prefix, MetricGroup);
+    undefined ->
+        ok
+  end.
+register_prometheus_metric_group(Prefix, MetricGroup) ->
+  %% reset counter
+  lager:info("Register prometheus metric group: ~s", [MetricGroup]),
+  Q = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_total"]),utf8),
+  QG = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_gone_total"]),utf8),
+  QT = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query_timeout_total"]),utf8),
+  prometheus_counter:inc(Q, [MetricGroup], 0),
+  prometheus_counter:inc(QG, [MetricGroup], 0),
+  prometheus_counter:inc(QT, [MetricGroup], 0).
 
 -spec metric_group_from_routing_key(binary()) -> binary().
 metric_group_from_routing_key(RK) when is_binary(RK) ->
@@ -417,8 +503,12 @@ metric_group_from_routing_key(RK) when is_binary(RK) ->
  -spec notify_group_called(binary()) -> boolean().
 notify_group_called(MetricGroup) ->
   case metric_group_exists(MetricGroup) of
-    true -> folsom_metrics:notify({metric_group_key_count(MetricGroup), 1}), true;
-    false -> false
+    true ->
+        folsom_metrics:notify({metric_group_key_count(MetricGroup), 1}),
+        prometheus_inc_counter('broen_core_query', [binary_to_atom(MetricGroup,utf8)], 1),
+        true;
+    false ->
+        false
   end.
 
 notify_group_gone(MetricGroup) ->
@@ -428,19 +518,24 @@ notify_group_gone(MetricGroup) ->
       % metric group exists, but message could not be delivered,
       % meaning that a subsystem is now gone
       lager:warning("broen_core metric_group_gone ~s", [MetricGroup]),
-      folsom_metrics:notify({metric_group_key_gone(MetricGroup), 1})
+      folsom_metrics:notify({metric_group_key_gone(MetricGroup), 1}),
+      prometheus_inc_counter('broen_core_query_gone', [binary_to_atom(MetricGroup,utf8)], 1)
   end.
 
 notify_group_timeout(MetricGroup) ->
   case metric_group_exists(MetricGroup) of
-    true -> folsom_metrics:notify({metric_group_key_timeout(MetricGroup), 1});
+    true ->
+        folsom_metrics:notify({metric_group_key_timeout(MetricGroup), 1}),
+        prometheus_inc_counter('broen_core_query_timeout', [binary_to_atom(MetricGroup,utf8)], 1);
     false -> ok
   end.
 
 notify_group_latency(MetricGroup, TimeZero, TimeAfter) ->
   case metric_group_exists(MetricGroup) of
-    true -> histogram_notify(metric_group_key_latency(MetricGroup),
-                             timer:now_diff(TimeAfter, TimeZero) div 1000);
+    true ->
+        Ms = timer:now_diff(TimeAfter, TimeZero) div 1000,
+        histogram_notify(metric_group_key_latency(MetricGroup), Ms),
+        notify_prometheus_group_latency(MetricGroup, Ms);
     false -> ok
   end.
 
@@ -451,4 +546,14 @@ histogram_notify(Name, Diff) ->
       folsom_metrics:notify(Name, Diff);
     Res ->
       Res
+  end.
+
+notify_prometheus_group_latency(MetricGroup, Ms) ->
+  case application:get_env(broen, prometheus) of
+    {ok, #{ prefix := Prefix }} ->
+        QH = binary_to_atom(iolist_to_binary([Prefix, "_broen_core_query"]),utf8),
+        %%lager:debug("observing prometheus metric ~p, labels [~p], ms: ~p", [QH, binary_to_atom(MetricGroup,utf8), Ms]),
+        prometheus_histogram:observe(QH, [binary_to_atom(MetricGroup,utf8)], Ms);
+    undefined ->
+        ok
   end.

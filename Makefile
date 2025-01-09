@@ -27,3 +27,13 @@ dialyzer:
 
 publish:
 	$(REBAR) hex publish
+
+
+### Docker
+##################################
+
+DOCKER_DEV_COMPOSE := docker compose --file docker/dev-compose.yml --project-name broen
+
+dev-console:
+	$(DOCKER_DEV_COMPOSE) up --remove-orphans --detach --wait
+	$(DOCKER_DEV_COMPOSE) exec --workdir /app broen-dev /bin/bash
